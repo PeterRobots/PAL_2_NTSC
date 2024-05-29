@@ -40,7 +40,7 @@ do
     # echo "ResampleAudio(48000)" >> $SCRIPT
     FN="$(basename "${F}")"
     FN_BASE="${FN%.*}"
-    FN_RESAMPLED="${FN_BASE}_resampled.mkv"
+    FN_RESAMPLED="${FN_BASE}_resampled2.mkv"
     FN_FINAL="${FN_BASE}_final.mkv"
     FN_CHAPTERS="$FN_BASE.txt"
     # echo "File $FN"
@@ -52,10 +52,12 @@ do
     let inverse_factor=1.0/$factor
     let rate=24000.0/1001.0
     ffmpeg -threads auto -hwaccel auto -y -i $F -filter_complex "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:0]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" -map "[vout]" -map "[aout]" -aspect 4:3 -r:v $rate -vsync cfr -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 320k -profile:v main -tag:v hvc1 "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_ff_out.txt 2> ${LOGDIR}/${FN_BASE}_ff_err.txt
-    echo "extracting chapters"
-    mkvextract "$F" chapters "$OUTDIR/$FN_CHAPTERS"
-    echo "Merging chapters with resampled"
-    mkvmerge -o "$OUTDIR/$FN_FINAL" --chapter-sync "0,$inverse_factor" --chapters "$OUTDIR/$FN_CHAPTERS" "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_merge_out.txt 2> ${LOGDIR}/${FN_BASE}_merge_err.txt
+    # ffmpeg -hide_banner -y -i "$f" -map 0:a:m:language:eng? -af aresample=resampler=soxr,asetrate=$factor*$samplerate -ar $samplerate -sample_fmt s16 -map_chapters -1 -map_metadata -1 "$OUTDIR/$FN_BASE.eng.flac" 
+    # mkvmerge -o "$OUTDIR/$FN_RESAMPLED" --no-chapters --no-audio --default-duration 0:${rate}fps "$f" --track-name "0:FLAC English" --language 0:eng "$OUTDIR/$FN_BASE.eng.flac"
+    # echo "extracting chapters"
+    # mkvextract "$F" chapters "$OUTDIR/$FN_CHAPTERS"
+    # echo "Merging chapters with resampled"
+    # mkvmerge -o "$OUTDIR/$FN_FINAL" --chapter-sync "0,$inverse_factor" --chapters "$OUTDIR/$FN_CHAPTERS" "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_merge_out.txt 2> ${LOGDIR}/${FN_BASE}_merge_err.txt
     echo "Cleaning up..."
     rm -f "$F.lwi"
     # rm -f script.avs
