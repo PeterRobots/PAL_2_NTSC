@@ -51,7 +51,8 @@ do
     let factor=24000.0/25025.0
     let inverse_factor=1.0/$factor
     let rate=24000.0/1001.0
-    ffmpeg -threads auto -hwaccel auto -y -i $F -vf "setpts=PTS*$inverse_factor, fps=fps=ntsc_film" -af "asetrate=$factor*$samplerate" -ar $samplerate -aspect 4:3 -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 320k -profile:v main -tag:v hvc1 "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_ff_out.txt 2> ${LOGDIR}/${FN_BASE}_ff_err.txtecho "extracting chapters"
+    ffmpeg -threads auto -hwaccel auto -y -i $F -filter_complex "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:0]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" -map "[vout]" -map "[aout]" -aspect 4:3 -r:v $rate -vsync cfr -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 320k -profile:v main -tag:v hvc1 "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_ff_out.txt 2> ${LOGDIR}/${FN_BASE}_ff_err.txt
+    echo "extracting chapters"
     mkvextract "$F" chapters "$OUTDIR/$FN_CHAPTERS"
     echo "Merging chapters with resampled"
     mkvmerge -o "$OUTDIR/$FN_FINAL" --chapter-sync "0,$inverse_factor" --chapters "$OUTDIR/$FN_CHAPTERS" "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_merge_out.txt 2> ${LOGDIR}/${FN_BASE}_merge_err.txt
