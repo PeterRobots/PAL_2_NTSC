@@ -54,13 +54,7 @@ do
     echo "Resampling audio and video"
     samplerate=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 $F)
     factor=24000/25025
-    # With outputfile
-    # ffmpeg -stats -y -i $F -vf "setpts=PTS/$factor" -r 24000/1001 -vsync "cfr" -af "asetrate=$factor*$samplerate" -ar $samplerate -aspect 4:3 -acodec ac3 -vcodec hevc_videotoolbox -q:v 80 -tag:v hvc1 "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_ff_out.txt 2> ${LOGDIR}/${FN_BASE}_ff_err.txt
-    # With stats
-    # ffmpeg -threads auto -hwaccel auto -stats -y -i $F -vf "setpts=PTS/$factor" -r 24000/1001 -vsync "cfr" -af "asetrate=$factor*$samplerate" -ar $samplerate -aspect 4:3 -acodec ac3 -vcodec hevc_videotoolbox -q:v 80 -tag:v hvc1 "$OUTDIR/$FN_RESAMPLED" 2> ${LOGDIR}/${FN_BASE}_ff_err.txt
-    ffmpeg -progress pipe:1 -threads auto -hwaccel auto -y -i $F -vf "setpts=PTS/$factor" -r 24000/1001 -vsync "cfr" -af "asetrate=$factor*$samplerate" -ar $samplerate -aspect 4:3 -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 128k -profile:v main -tag:v hvc1 "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_ff_out.txt 2> ${LOGDIR}/${FN_BASE}_ff_err.txt
-    # ffmpeg -i $SCRIPT -aspect 16:9 -acodec ac3 -vcodec libx264 -preset slow -crf 18 "$OUTDIR/$FN" > ${OUTDIR}/${FN_BASE}_ff_out.txt 2> ${OUTDIR}/${FN_BASE}_ff_err.txt
-    echo "extracting chapters"
+    ffmpeg -threads auto -hwaccel auto -y -i $F -vf "setpts=PTS*$inverse_factor, fps=fps=ntsc_film" -af "asetrate=$factor*$samplerate" -ar $samplerate -aspect 4:3 -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 320k -profile:v main -tag:v hvc1 "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_ff_out.txt 2> ${LOGDIR}/${FN_BASE}_ff_err.txtecho "extracting chapters"
     mkvextract "$F" chapters "$OUTDIR/$FN_CHAPTERS"
     echo "Merging chapters with resampled"
     mkvmerge -o "$OUTDIR/$FN_FINAL" --chapter-sync "0,25025/24000" --chapters "$OUTDIR/$FN_CHAPTERS" "$OUTDIR/$FN_RESAMPLED" > ${LOGDIR}/${FN_BASE}_merge_out.txt 2> ${LOGDIR}/${FN_BASE}_merge_err.txt
