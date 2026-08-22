@@ -56,7 +56,7 @@ while [[ $# -gt 0 ]]; do
     --help)
       echo "Usage: $0 [options]"
       echo "  -i                    Set input and container type"
-      echo "  -o,                   Set output file, path and container (default ./Processed/<type>/<input_name>.<input_type>)"
+      echo "  -o,                   Set output file, path and container (default </Processed/<input_file>)"
       echo "  -p, --preset          Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed  (default: medium)"
       echo "  -cv, --video-codec    Set video codec: h266|vvc, h265|hevc, h264|avc, vp9, av1, av2, ffv1|lossless (default: h264)"
       echo "  -ca, --audio-codec    Set audio codec: HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac, truehd ; Legacy: mp3 (default: aac)"
@@ -93,22 +93,6 @@ else
     fi
 
 fi
-
-if [[ "$INPUT" == *"/FILMS/"* ]]; then
-  MEDIA_TYPE_DIR="FILMS"
-elif [[ "$INPUT" == *"/TV/"* ]]; then
-  MEDIA_TYPE_DIR="TV"
-fi
-# MEDIATYPEDIR=$(basename $(dirname $INPUT))
-BASE_FILE=$(basename $INPUT)
-BASE_OUTPUT=$(basename $OUTPUT)
-MEDIA_PATH="${DIR#*$MEDIATYPEDIR}"
-MEDIA_DIR="${MEDIAPATH%%/*}"
-CONTENT_PATH="${DIR#*$MEDIADIR}"
-PROCESSED_DIR="$BASE_PROCESSED_DIR/$MEDIA_TYPE_DIR/$MEDIA_DIR-$BASE_OUTPUT/$CONTENT_PATH"
-
-if [ -z $OUTPUT ]; then
-    OUTPUT=
 
 # PLATFORM
 case "$OSTYPE" in
@@ -190,7 +174,7 @@ esac
 case "$DEVICE" in
   cpu)
     HW_ACCEL=""
-    DEINTERLACE_FILTER
+    DEINTERLACE_FILTER=()
   ;;
   gpu)
     HW_ACCEL=(-hwaccel vulkan)
@@ -253,36 +237,25 @@ mkdir -p $PROCESSED_DIR
 mkdir -p $LOG_DIR
 # echo $OUTPUT
 counter=1
-for F in $FILES
-do
-    echo "iteration = $counter"
-    echo "file = $F"
-    SCRIPT="$OUTPUT/script.avs"
-    # echo "A = FFVideoSource(\"$F\")" > $SCRIPT
-    # echo "B = FFAudioSource(\"$F\")" >> $SCRIPT
-    # echo "AudioDub(A,B)" >> $SCRIPT
-    # echo "FFmpegSource2(\"$F\")" > $SCRIPT
-    # echo "AssumeFPS(24000,1001,sync_audio=true)" >> $SCRIPT
-    # echo "ResampleAudio(48000)" >> $SCRIPT
-    FN="$(basename "${F}")"
-    FN_BASE="${FN%.*}"
-    FN_CONTAINER="${FN#.*}"
-    FN_OUT="${FN_BASE}${FN_CONTAINER}"
-#     FN_FINAL="${FN_BASE}_final.mkv"
-    FN_CHAPTERS="$FN_BASE.txt"
-    # echo "File $FN"
-    # echo "File base $FN_BASE"
-    # echo "$OUTPUT/${FN_BASE}_final.mkv"
-    # 2^x/12
-    echo "Resampling audio and video"
-    samplerate=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 $F)
-    let "factor = 24000/25025.0"
-    let inverse_factor=1.0/$factor
-    let rate=24000.0/1001.0
-#     echo $sample_rate
-#     echo $factor
-#     echo $inverse_factor
-#     echo $factor
+for F in $FILES; do
+  echo "iteration = $counter"
+  echo "file = $F"
+
+  BASE_FILE=$(basename $INPUT)
+  F_NAME="${BASE_FILE%.*}"
+  F_CONTAINER="${BASE_FILE#.*}"
+  F_PATH="${DIR#*$BASE_FILE}"
+  if [ -z $OUTPUT ]; then
+      OUTPUT="$F_PATH/Processed/$F_NAME$F_CONTAINER"
+  F_CHAPTERS="${OUTPUT%.*}_chapters.txt"
+
+  # 2^x/12
+  echo "Resampling audio and video"
+  SAMPLERATE=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 $F)
+  FPS=$((ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate "$INPUT"))
+  CORRECTION=$(( 24000/25025.0 ))
+  INVERSE_CORRECTION=$(( 1.0/$factor ))
+  CORRECT_SAMPLERATE=$((24000.0/1001.0))
     # With outputfile
 #     if [[ $(uname) == "Darwin" ]]; then
 #         ffmpeg -y -loglevel error -stats -i $F -filter_complex "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:0]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" -map "[vout]" -map "[aout]" -aspect 4:3 -r:v $rate -vsync cfr -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 320k -profile:v main -tag:v hvc1 $OUTPUT/$FN_RESAMPLED
@@ -336,6 +309,13 @@ do
     # rm -f script.avs
     # rm -f "$OUTPUT/$FN_CHAPTERS"
     # mv "$OUTPUT/${FN_BASE}_final.mkv" "$OUTPUT/$FN"
+      # SCRIPT="$OUTPUT/script.avs"
+  # echo "A = FFVideoSource(\"$F\")" > $SCRIPT
+  # echo "B = FFAudioSource(\"$F\")" >> $SCRIPT
+  # echo "AudioDub(A,B)" >> $SCRIPT
+  # echo "FFmpegSource2(\"$F\")" > $SCRIPT
+  # echo "AssumeFPS(24000,1001,sync_audio=true)" >> $SCRIPT
+  # echo "ResampleAudio(48000)" >> $SCRIPT
     echo "Done."
     let counter++
 done
