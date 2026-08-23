@@ -8,6 +8,10 @@ PRESET="medium"
 V_CODEC="h264"
 A_CODEC="aac"
 DEINTERLACE=false
+DVD_WIDTH=720
+DVD_PAL_HEIGHT=576
+DVD_NTSC_HEIGHT=480
+MAX_DVD_SIZE=8540000000
 
 # ARG INPUT
 while [[ $# -gt 0 ]]; do
@@ -109,17 +113,6 @@ case "$OSTYPE" in
     echo "Unknown platform: $OSTYPE"
     ;;
 esac
-
-# Interlaced
-INTERLACED=$(ffmpeg -i $INPUT -vf "idet" -f null - 2>&1 | grep "Multi frame")
-BFF= $(sed -nE 's/.*BFF: (\d+).*/\1/p' $INTERLACED)
-TFF= $(sed -nE 's/.*TFF: (\d+).*/\1/p' $INTERLACED)
-# If deinterlace and BFF or TFF found
-if [[ $DEINTERLACE ]] && (( $BFF > 0 || $TFF > 0 )); then
-  DEINTERLACE_FILTER="bwdif"
-else
-  DEINTERLACE_FILTER=""
-fi
 
 # Quality
 case "$PRESET" in
@@ -251,8 +244,27 @@ for F in $FILES; do
 
   # 2^x/12
   echo "Resampling audio and video"
-  SAMPLERATE=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 $F)
-  FPS=$((ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate "$INPUT"))
+  IFS=',' read -r -a FFPROBE_ARR <<< ffprobe -v error -show_format -show_entries stream=codec_name,width,height,field_order,r_frame_rate,sample_rate -of default=noprint_wrappers=1 $INPUT
+  # SAMPLERATE=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 $F)
+  # FPS=$(ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate $F)
+  # Interlaced
+  # INTERLACED=$(ffmpeg -i $INPUT -vf "idet" -f null - 2>&1 | grep "Multi frame")
+  # ffprobe -v error -select_streams v:0 -show_entries stream=field_order $F
+  # BFF= $(sed -nE 's/.*BFF: (\d+).*/\1/p' $INTERLACED)
+  # TFF= $(sed -nE 's/.*TFF: (\d+).*/\1/p' $INTERLACED)
+  # If deinterlace and BFF or TFF found
+  # if [[ $DEINTERLACE ]] && (( $BFF > 0 || $TFF > 0 )); then
+  #   DEINTERLACE_FILTER="bwdif"
+  # else
+  #   DEINTERLACE_FILTER=""
+  # fi
+  F_BFF=$(sed -nE 's/.*bb: (\d+).*/\1/p' $FFPROBE_ARR)
+  F_TFF=$(sed -nE 's/.*tt: (\d+).*/\1/p' $FFPROBE_ARR)
+  F_FPS=$(sed -nE 's/.*fps: (\d+).*/\1/p' $FFPROBE_ARR)
+  F_CODEC=$(sed -nE 's/.*codec: (\d+).*/\1/p' $FFPROBE_ARR)
+  F_WIDTH=$(sed -nE 's/.*width: (\d+).*/\1/p' $FFPROBE_ARR)
+  F_HEIGHT=$(sed -nE 's/.*height: (\d+).*/\1/p' $FFPROBE_ARR)
+  echo ${FFPROBE_ARR}
   CORRECTION=$(( 24000/25025.0 ))
   INVERSE_CORRECTION=$(( 1.0/$factor ))
   CORRECT_SAMPLERATE=$((24000.0/1001.0))
@@ -272,7 +284,8 @@ for F in $FILES; do
 #         Example of raw input to cuda for nvidia accelerated split filter
 #         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
     if [ ! -e $OUTPUT/$FN_NVENC_RESAMPLED ] && [ ! -e "$PROCESSEDDIR/$FN_NVENC_RESAMPLED" ]; then
-        if [ $(stat -f%z "$F" 2>/dev/null || stat -c%s "$F") -lt 10737418240 ]; then
+        # If file has size and is greater than 8.54GB (Dual layer Single Sided DVD-9 standard, max of a common DVD size) =  BLURAY
+        if [ $(stat -f%z "$F" 2>/dev/null || stat -c%s "$F") -lt $MAX_DVD_SIZE ]; then
             echo file is not bluray
             echo "$PROCESSEDDIR/$FN_NVENC_RESAMPLED"
             ffmpeg \
