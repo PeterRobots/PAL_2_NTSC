@@ -23,6 +23,7 @@ GPU: M1 (videotoolbox)
 ```
 
 # Method
+- Check available hardware acceleration methods with `ffmpeg -hwaccels`
 - Input a file or folder containing video files from DVD or BLURAY.
 - Set output path or filename.
 - Specify device for encoding
@@ -41,20 +42,37 @@ The process is split into two parts:
 ### Hardware acceleration
 There's three stages where cpu or hardware acceleration comes into play:
 1) Decode
+	- **DVDs:** Uses the original **MPEG-2** video codec.
+	- **Blu-rays:** Uses whichever codec the studio used on the disc, typically **H.264 (MPEG-4 AVC)**, **VC-1**, or **MPEG-2**.
+	- **4K Ultra HD Blu-rays:** Uses the **H.265 (HEVC)** codec
 2) Filters
 3) Encode
 
 I decided to support as wide a base as possible.
+- Unaccelerated software `cpu` encoding
 - `amd` with `vulkan`
+	- `VAAPI` is an option
+		- https://trac.ffmpeg.org/wiki/Hardware/VAAPI
 - `nvidia` with `cuda`
 - `intel` with `qsv`
+	- https://trac.ffmpeg.org/wiki/Hardware/QuickSync
+		- Compatibiltity and setup is a bit of a nightmare.
+	- `vaapi` is also an option
+		- https://trac.ffmpeg.org/wiki/Hardware/VAAPI
 - `apple` with `videotoolbox`
 
-- CPU
-- GPU
-    - `nvidia` use `cuda` 
-    - `amd` use `amf` 
-
+# Examples
+VA-API example of transcope with deinterlace (intel/amd option)
+https://trac.ffmpeg.org/wiki/Hardware/VAAPI
+  ```sh
+  ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi -i input.mp4 -vf 'deinterlace_vaapi=rate=field:auto=1' -c:v hevc_vaapi -b:v 5M output.mp4
+  ```
+ 
+ H264 qsv decode + h264 qsv encode with 5Mbps using ICQ && Look_ahead mode (similar to x264 crf)
+ https://trac.ffmpeg.org/wiki/Hardware/QuickSync
+```sh
+ffmpeg -hwaccel qsv -c:v h264_qsv -i input.mp4 -vf 'vpp_qsv=deinterlace=2' -c:v h264_qsv -global_quality 25 -look_ahead 1 output.mp4
+```
 # To Do
 - Better autodetection of pal/ntsc
     - Compare file lengths to online databases?
