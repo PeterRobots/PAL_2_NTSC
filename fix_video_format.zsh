@@ -14,6 +14,7 @@ DVD_PAL_HEIGHT=576
 DVD_NTSC_HEIGHT=480
 # Based on Dual layer Single Sided DVD-9 standard, max of a common DVD size (Bytes)
 MAX_DVD_SIZE=8540000000
+BITS="keep"
 
 # ARG INPUT
 while [[ $# -gt 0 ]]; do
@@ -50,6 +51,10 @@ while [[ $# -gt 0 ]]; do
       LANGUAGE="$2"
       shift 2
       ;;
+    -b|--bit-pixel-format)
+      BITS="$2"
+      shift 2
+      ;;
     -v|--log-level)
       if (((quiet panic fatal error warning info verbose debug trace)[(e)$2])); then
         LOG="$2"
@@ -70,9 +75,10 @@ while [[ $# -gt 0 ]]; do
       echo "  -p, --preset          Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed  (default: medium)"
       echo "  -cv, --video-codec    Set video codec: h266|vvc, h265|hevc, h264|avc, vp9, av1, av2, ffv1|lossless (default: h264)"
       echo "  -ca, --audio-codec    Set audio codec: HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac, truehd ; Legacy: mp3 (default: aac)"
-      echo "  -d, --device          Set device: cpu, gpu (autodetect: amd, cuda, intel, mac) (default: cpu)"
+      echo "  -d, --device          Set device: cpu, gpu (autodetect: amd, nvidia, intel, mac) (default: cpu)"
       echo "  -t, --type            Set type: auto (if > 10GB => br), (DVD) ntsc, (DVD) ntsc_film, (DVD) pal, (BLURAY) br (default: auto)"
       echo "  -v, --log-level       Set/Flag the log level: quiet, panic, fatal, error, warning, info, verbose, debug, trace  (default: fatal)"
+      echo "  -b, --bit-pixel-format  Set bit pixel format: 8, 10, keep  (default: keep)"
       echo "  -s, --subtitle-lang   Set subtitle language filter: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
       echo "  --deinterlace         Flag whether to deinterlace or not: default (off)"
       exit 0
@@ -141,66 +147,147 @@ case "$PRESET" in
     ;;
 esac
 
-# Video Codec quality adjustments
-case "$V_CODEC" in
-    h266|vvc)
-    QUALITY=$((QUALITY+3))
-    ;;
-    h265|hevc)
-    QUALITY=$((QUALITY+2))
-    ;;
-    h264|avc)
-    pass
-    ;;
-    vp9)
-    pass
-    ;;
-    av1)
-    QUALITY=$((QUALITY+2))
-    ;;
-    av2)
-    QUALITY=$((QUALITY+3))
-    ;;
-    ffv1|lossless)
-    QUALITY=0
-    ;;
-    *)
-    echo "Unknown Video codec: $V_CODEC"
-    exit 2
-    ;;
-esac
 
 # Software or hardware accelerated
+# -pix_fmt yuv420p10le
+V_CODEC_FILTER=(-c:v)
 case "$DEVICE" in
   cpu)
     HW_ACCEL=""
     DEINTERLACE_FILTER="bwdif"
+    case "$V_CODEC" in
+        h266|vvc)
+        QUALITY=$((QUALITY+3))
+        V_CODEC_ARGS+=(libvvenc -preset medium -qp $QUALITY)
+        ;;
+        h265|hevc)
+        QUALITY=$((QUALITY+2))
+        V_CODEC_ARGS+=(libx265 -preset medium -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -crf $QUALITY)
+        ;;
+        h264|avc)
+        V_CODEC_ARGS+=(libx264 -preset medium -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -crf $QUALITY)
+        ;;
+        vp9)
+        V_CODEC_ARGS+=(libvpx -quality good -crf $QUALITY)
+        ;;
+        av1)
+        QUALITY=$((QUALITY+2))
+        V_CODEC_ARGS+=(libsvtav1 -preset 4 -svtav1-params tune=0 -crf $QUALITY)
+        ;;
+        ffv1|lossless)
+        V_CODEC_ARGS+=(ffv1 -level 3)
+        ;;
+        *)
+        echo "Unknown Video codec: $V_CODEC"
+        exit 2
+        ;;
+    esac
   ;;
   gpu)
     case "$GPU" in
       nvidia)
         HW_ACCEL=(-hwaccel cuda -hwaccel_output_format cuda)
+        GPU_FILTER=""
         DEINTERLACE_FILTER="bwdif_cuda"
+        case "$V_CODEC" in
+          h265|hevc)
+          QUALITY=$((QUALITY+1))
+          V_CODEC_ARGS+=(hevc_nvenc -preset p7 -cq $QUALITY)
+          ;;
+          h264|avc)
+          QUALITY=$((QUALITY-1))
+          V_CODEC_ARGS+=(h264_nvenc -preset p7 -cq $QUALITY)
+          ;;
+          av1)
+          QUALITY=$((QUALITY+1))
+          V_CODEC_ARGS+=(av1_nvenc -preset p7 -cq $QUALITY)
+          ;;
+          *)
+          echo "Unknown Video codec: $V_CODEC"
+          exit 2
+          ;;
+        esac
       ;;
       amd)
-        HW_ACCEL=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan)
+        HW_ACCEL=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan -filter_hw_device vk)
         # Only deinterlace marked fields
-        DEINTERLACE_FILTER="bwdif_vulkan=deint=1"
+        DEINTERLACE_FILTER="bwdif_vulkan=deint=1,hwdownload"
+        GPU_FILTER="hwupload"
+        case "$V_CODEC" in
+          h265|hevc)
+          QUALITY=$((QUALITY+2))
+          V_CODEC_ARGS+=(hevc_vulkan -preset medium -crf $QUALITY)
+          ;;
+          h264|avc)
+          V_CODEC_ARGS+=(h264_vulkan -preset medium -crf $QUALITY)
+          ;;
+          av1)
+          QUALITY=$((QUALITY+2))
+          V_CODEC_ARGS+=(av1_vulkan -preset 4 -svtav1-params tune=0 -crf $QUALITY)
+          ;;
+          *)
+          echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
+          exit 2
+          ;;
+        esac
       ;;
       intel)
         HW_ACCEL=(-hwaccel qsv -qsv_device /dev/dri/renderD128)
         # 2 is advanced motion-adaptive, 1 is bob weaver
         # -init_hw_device "qsv=qsv"
         DEINTERLACE_FILTER="vpp_qsv=deinterlace=2"
+        case "$V_CODEC" in
+          h266|vvc)
+          QUALITY=$((QUALITY+3))
+          V_CODEC_ARGS+=(libvvenc -preset medium -qp $QUALITY)
+          ;;
+          h265|hevc)
+          QUALITY=$((QUALITY+2))
+          V_CODEC_ARGS+=(libx265 -preset medium -crf $QUALITY)
+          ;;
+          h264|avc)
+          V_CODEC_ARGS+=(libx264 -preset medium -crf $QUALITY)
+          ;;
+          vp9)
+          V_CODEC_ARGS+=(libvpx -quality good -crf $QUALITY)
+          ;;
+          av1)
+          QUALITY=$((QUALITY+2))
+          V_CODEC_ARGS+=(libsvtav1 -preset 4 -svtav1-params tune=0 -crf $QUALITY)
+          ;;
+          *)
+          echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
+          exit 2
+          ;;
+        esac
       ;;
       mac)
         HW_ACCEL=(-hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
         DEINTERLACE_FILTER="bwdif"
-      ;;
-      vaapi)
-        # HW_ACCEL=(-vaapi_device /dev/dri/renderD128)
-        HW_ACCEL=(-hwaccel vaapi -hwaccel_output_format vaapi -hwaccel_device /dev/dri/renderD128)
-        DEINTERLACE_FILTER="deinterlace_vaapi=rate=field:auto=1"
+        case "$V_CODEC" in
+          h266|vvc)
+          QUALITY=$((QUALITY+3))
+          V_CODEC_ARGS+=(libvvenc -preset medium -qp $QUALITY)
+          ;;
+          h265|hevc)
+          QUALITY=$((QUALITY+2))
+          V_CODEC_ARGS+=(libx265 -preset medium -crf $QUALITY)
+          ;;
+          h264|avc)
+          V_CODEC_ARGS+=(libx264 -preset medium -crf $QUALITY)
+          ;;
+          vp9)
+          V_CODEC_ARGS+=(libvpx -quality good -crf $QUALITY)
+          ;;
+          av1)
+          QUALITY=$((QUALITY+2))
+          V_CODEC_ARGS+=(libsvtav1 -preset 4 -svtav1-params tune=0 -crf $QUALITY)
+          ;;
+          *)
+          echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
+          exit 2
+          ;;
+        esac
       ;;
     esac
   ;;
@@ -210,7 +297,7 @@ case "$DEVICE" in
   ;;
 esac
 
-
+VIDEO_CODEC_ARGS+=(-bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
 # -vf "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
 # -vf "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
 LOG_DIR="$PROCESSED_DIR/Logs"
@@ -240,7 +327,7 @@ for F in $FILES; do
   # ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi -i input.mp4 -vf 'deinterlace_vaapi=rate=field:auto=1,scale_vaapi=w=1280:h=720' -c:v hevc_vaapi -b:v 5M output.mp4
 
 
-    IFS=',' read -r -a FFPROBE_ARR <<< ffprobe -v error -show_format -show_entries stream=codec_name,width,height,field_order,r_frame_rate,sample_rate -of default=noprint_wrappers=1 $INPUT
+    IFS=',' read -r -a FFPROBE_ARR <<< ffprobe -v error -show_format -show_entries stream=codec_name,width,height,field_order,r_frame_rate,sample_rate,pix_fmt -of default=noprint_wrappers=1 $INPUT
   # SAMPLERATE=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=noprint_wrappers=1:nokey=1 $F)
   # FPS=$(ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate $F)
   # Interlaced
@@ -259,7 +346,37 @@ for F in $FILES; do
   F_CODEC=$(sed -nE 's/.*codec: (\d+).*/\1/p' $FFPROBE_ARR)
   F_WIDTH=$(sed -nE 's/.*width: (\d+).*/\1/p' $FFPROBE_ARR)
   F_HEIGHT=$(sed -nE 's/.*height: (\d+).*/\1/p' $FFPROBE_ARR)
+  F_PIX_FMT=$(sed -nE 's/.*pix_fmt: (\d+).*/\1/p' $FFPROBE_ARR)
+
   echo ${FFPROBE_ARR}
+  if [[ $BITS == 'keep' ]]; then
+      BITS=$F_PIX_FMT
+  fi
+
+  case "$BITS" in
+      8)
+      BIT_FORMAT="yuv420p"
+      ;;
+      10)
+      case "$DEVICE" in
+        cpu)
+        BIT_FORMAT="yuv420p10le"
+        ;;
+        gpu)
+        BIT_FORMAT="p010le"
+        ;;
+        *)
+          echo "Unknown device: $DEVICE"
+          exit 2
+        ;;
+      esac
+      ;;
+      *)
+      echo "Unknown preset: $PRESET"
+      exit 2
+      ;;
+  esac
+
   CORRECTION=$(( 24000/25025.0 ))
   INVERSE_CORRECTION=$(( 1.0/$CORRECTION ))
   CORRECT_SAMPLERATE=$((24000.0/1001.0))
