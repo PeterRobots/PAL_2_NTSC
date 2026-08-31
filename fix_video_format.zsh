@@ -10,13 +10,14 @@ A_CODEC="aac"
 LANGUAGE="keep"
 BITS="keep"
 DEINTERLACE=true
+NEED_FIXING=false
 A_BITRATE=320k
 
 # Constants
 readyonly DVD_WIDTH=720
 readyonly DVD_PAL_HEIGHT=576
 readyonly DVD_NTSC_HEIGHT=480
-# Based on Dual layer Single Sided DVD-9 standard, max of a common DVD size (Bytes)
+# Based on Dual layer Single Sided DVD-9 standard, max of a common DVD size 8.54GB (Bytes)
 readyonly MAX_DVD_SIZE=8540000000
 # ARG INPUT
 while [[ $# -gt 0 ]]; do
@@ -120,6 +121,8 @@ case "$OSTYPE" in
     ;;
   linux*)
     GPU=$(lspci | grep -i --color 'vga\|3d\|2d')
+    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
   msys*)
     GPU=$(wmic path win32_VideoController get caption)
@@ -134,22 +137,27 @@ case "$PRESET" in
     l|low)
     QUALITY=25
     PRESET_ARG=7
+    BIT_RATE=192
     ;;
     m|medium)
     QUALITY=21
     PRESET_ARG=4
+    BIT_RATE=256
     ;;
     h|high)
     QUALITY=18
     PRESET_ARG=1
+    BIT_RATE=640
     ;;
     u|uncompresssed)
     QUALITY=0
     PRESET_ARG=0
+    BIT_RATE=0
     ;;
     k|keep)
     QUALITY=-1
     PRESET_ARG=-1
+    BIT_RATE=-1
     ;;
     *)
     echo "Unknown preset: $PRESET"
@@ -159,6 +167,55 @@ esac
 
 get_a_encode_args() {
   A_ENCODE_ARGS=(-c:a $A_CODEC -b:a 640k)
+  HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac, truehd ; Legacy: mp3
+  case "$A_CODEC" in
+      aac)
+      A_ENCODE_ARGS+=(libfdk_aac -b:a ${BIT_RATE}k)
+      ;;
+      ac3|dolby)
+      if (( ${AVAILABLE_A_CODECS[(Ie)libfdk_aac]} )); then
+        # libfdk_aac is proprietary but a lot better, if available use it.
+        A_ENCODE_ARGS+=(libfdk_aac -b:a ${BIT_RATE}k)
+      else
+        A_ENCODE_ARGS+=(aac -b:a ${BIT_RATE}k)
+      fi
+      ;;
+      eac3|dolbyplus)
+      A_ENCODE_ARGS+=(eac3 -b:a ${BIT_RATE}k)
+      ;;
+      opus)
+      A_ENCODE_ARGS+=(libopus -b:a ${BIT_RATE}k)
+      ;;
+      vorbis)
+      A_ENCODE_ARGS+=(libvorbis -b:a ${BIT_RATE}k)
+      ;;
+      lpcm|pcm|none)
+      A_ENCODE_ARGS+=(pcm_s16le -b:a ${BIT_RATE}k)
+      ;;
+      flac)
+      A_ENCODE_ARGS+=(flac -b:a ${BIT_RATE}k)
+      ;;
+      alac)
+      A_ENCODE_ARGS+=(alac -b:a ${BIT_RATE}k)
+      ;;
+      copy)
+      A_ENCODE_ARGS+=(copy)
+      ;;
+      mp3)
+      A_ENCODE_ARGS+=(libmp3lame -b:a ${BIT_RATE}k)
+      ;;
+      *)
+      if (( ${AVAILABLE_A_CODECS[(Ie)$A_CODEC]} )); then
+        A_ENCODE_ARGS+=($A_CODEC -b:a ${BIT_RATE}k)
+      elif [[ "${NEED_FIXING:l}" == "false" ]]; then
+        # If it doesn't need fixing, copy the audio stream
+        A_ENCODE_ARGS+=(copy)
+      else
+        echo "Unknown Video codec: $A_CODEC"
+        exit 2
+      fi
+      ;;
+  esac
 }
 
 get_device_args() {

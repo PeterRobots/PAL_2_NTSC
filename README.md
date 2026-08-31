@@ -79,6 +79,7 @@ There's three stages where cpu or hardware acceleration comes into play, dependi
 	- DVDs: MPEG-2
 	- Blu-rays: H.264 (MPEG-4 AVC), VC-1, or MPEG-2.
 	- 4K Ultra HD Blu-rays: H.265 (HEVC)
+	I do not specify input codecs, I leave this up to ffmpeg and hardware acceleration libraries to handle. This could cause some edge cases to fail, such as if an acceleration device does not support `mpeg2video` or another codec.
 2) Filters
 	- Video: 
 		- Correct FPS and runtime
