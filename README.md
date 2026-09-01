@@ -36,8 +36,16 @@ GPU: M1 (videotoolbox)
 Example: `./fix_video_format.zsh -i bad_pal_video.mkv -t pal -p medium -d gpu -v -o fixed_pal_video.mkv`
 
 # Explanation
-I enjoy a challenge and wanted a FOSS program (there are non-FOSS libraries used sadly) for fixing badly converted PAL/NTSC DVDs.
-It's evolved into a larger framework that includes encoding/decoding options and tries to streamline using ffmpeg for those less familiar.
+Years ago I wanted a solution for fixing badly converted PAL/NTSC DVDs. This started me on a journey to learn how to use ffmpeg and various libraries and filters in order to achieve that.
+This project is the culmination of that and it's evolved into a larger framework that includes encoding/decoding options and tries to streamline using ffmpeg for those less familiar.
+
+Q) Could you just use ffmpeg or mkvtoolnix without this?
+A) Yes and if you want features not supported by this program I encourage you to explore.
+
+Q) handbrake? 
+A) 100% and I encourage you to try it, it's feature rich, has cli and gui interaction, and is open sourced (hurray!). I skipped straight to ffmpeg years ago and didn't really investigate it until very recently. 
+
+I justify this project as a wrapper for ffmpeg to simplify the for setting up a simple routine to fix, deinterlace and encode a wide selection of DVDs and Blurays in a user friendly consistently 'good' way. 
 ### Options
 The first choice is whether you want to use software `cpu` method or some kind of hardware accelerated method.
 
@@ -75,6 +83,8 @@ You can still aim for smaller files with a lower quality preset or use `cpu` for
 - I have yet to explore`VAAPI` as an option https://trac.ffmpeg.org/wiki/Hardware/VAAPI
 ### Stages
 There's three stages where cpu or hardware acceleration comes into play, depending on available hardware, not all stages may be possible.
+0) `.mkv` manipulation with `mkvtoolnix`
+	- If **not deinterlacing** and you just want to correct speeds, this is skips other stages and just fixes the timestamps of each stream.
 1) Decode
 	- DVDs: MPEG-2
 	- Blu-rays: H.264 (MPEG-4 AVC), VC-1, or MPEG-2.

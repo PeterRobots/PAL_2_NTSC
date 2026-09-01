@@ -1,12 +1,11 @@
 #!/usr/bin/env zsh
 INPUT=""
 OUTPUT=""
-DEVICE="cpu"
-TYPE="auto"
+DEVICE="auto"
 LOG="fatal"
 PRESET="medium"
 V_CODEC="h264"
-A_CODEC="aac"
+A_CODEC="ac3"
 LANGUAGE="keep"
 PIX_FMT="keep"
 DEINTERLACE=true
@@ -53,10 +52,6 @@ while [[ $# -gt 0 ]]; do
       DEVICE="$2"
       shift 2
       ;;
-    -t|--type)
-      TYPE="$2"
-      shift 2
-      ;;
     -s|--subtitle-lang)
       LANGUAGE="$2"
       shift 2
@@ -84,9 +79,8 @@ while [[ $# -gt 0 ]]; do
       echo "  -o,                   Set output file, path and container (default </Processed/<input_file>)"
       echo "  -p, --preset          Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed, k|keep  (default: medium)"
       echo "  -cv, --video-codec    Set video codec: keep (maintain input codec), h266|vvc, h265|hevc, h264|avc, vp9, av1, av2, ffv1|lossless (default: h264)"
-      echo "  -ca, --audio-codec    Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac, truehd ; Legacy: mp3 (default: aac)"
-      echo "  -d, --device          Set device: cpu, gpu (autodetect: amd, nvidia, intel, mac) (default: cpu)"
-      echo "  -t, --type            Set type: auto (if > 10GB => br), (DVD) ntsc, (DVD) ntsc_film, (DVD) pal, (BLURAY) br (default: auto)"
+      echo "  -ca, --audio-codec    Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac, truehd ; Legacy: mp3 (default: ac3)"
+      echo "  -d, --device          Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, mac) (default: auto)"
       echo "  -v, --log-level       Set/Flag the log level: quiet, panic, fatal, error, warning, info, verbose, debug, trace  (default: fatal)"
       echo "  -bp, --bit-pixel-format  Set bit pixel format: 8, 10, keep  (default: keep)"
       echo "  -s, --subtitle-lang   Set subtitle language filter: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
