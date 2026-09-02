@@ -1,9 +1,9 @@
 # Requirements
-- Tested on `mac` and `linux`, untested on `windows`.
+- Tested on `mac` and `linux`, `windows (wsl)` #untested.
 - `ZSH`
 - `ffmpeg`
     - (mac/linux/wsl) (brew) you can install a fullfat ffmpeg with: `brew install ffmpeg-full`
-    - (windows) (chocolatey) you can install ffmpeg with chocolatey: `choco install ffmpeg-full`
+    - (windows) (chocolatey) #untested you can install ffmpeg with chocolatey: `choco install ffmpeg-full`
     - Or download an appropriate version from ffmpeg: https://ffmpeg.org/download.html
         - Ensure appropriate libraries for your intended use (H264, H265, AV1, hardware acceleration...)
         - Check your installed ffmpeg output with: `ffmpeg` in your terminal.        
@@ -44,6 +44,9 @@ A) Yes and if you want features not supported by this program I encourage you to
 
 Q) handbrake? 
 A) 100% and I encourage you to try it, it's feature rich, has cli and gui interaction, and is open sourced (hurray!). I skipped straight to ffmpeg years ago and didn't really investigate it until very recently. 
+
+Q) https://github.com/staxrip/staxrip
+A) If you use windows it looks like a great option
 
 I justify this project as a wrapper for ffmpeg to simplify the for setting up a simple routine to fix, deinterlace and encode a wide selection of DVDs and Blurays in a user friendly consistently 'good' way. 
 ### Options
@@ -101,22 +104,3 @@ There's three stages where cpu or hardware acceleration comes into play, dependi
 	- `cpu`
 	- Hardware accelerated
 		- Aim of equivalence in quality with `cpu`, but faster (YMMV)
-# Examples
-VA-API example of transcope with deinterlace (intel/amd option)
-https://trac.ffmpeg.org/wiki/Hardware/VAAPI
-  ```sh
-  ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi -i input.mp4 -vf 'deinterlace_vaapi=rate=field:auto=1' -c:v hevc_vaapi -b:v 5M output.mp4
-  ```
- 
- H264 qsv decode + h264 qsv encode with 5Mbps using ICQ && Look_ahead mode (similar to x264 crf)
- https://trac.ffmpeg.org/wiki/Hardware/QuickSync
-```sh
-ffmpeg -hwaccel qsv -c:v h264_qsv -i input.mp4 -vf 'vpp_qsv=deinterlace=2' -c:v h264_qsv -global_quality 25 -look_ahead 1 output.mp4
-```
-# To Do
-- Better autodetection of pal/ntsc
-    - Compare file lengths to online databases?
-- Test:
-    - Windows
-    - Intel gpu
-- Upscaling options

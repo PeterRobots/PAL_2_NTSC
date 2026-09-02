@@ -8,6 +8,7 @@ V_CODEC="h264"
 A_CODEC="ac3"
 LANGUAGE="keep"
 PIX_FMT="keep"
+FIX_TYPE="p2nf"
 DEINTERLACE=true
 NEED_FIXING=false
 A_BITRATE=320k
@@ -15,16 +16,21 @@ A_BITRATE=320k
 # Constants
 readyonly DVD_WIDTH=720
 # PAL
-readyonly DVD_PAL_HEIGHT=576
-readyonly PAL_SCANLINES=625
+readyonly PAL_DVD_HEIGHT=576
+readyonly PAL_DVD_WIDTH=704
+readyonly PAL_DVD_SCANLINES=625
+readyonly PAL_DVD_COLOR_SPACE=("bt470bg")
 readyonly PAL_FRAMERATE=25
 # NTSC
+readyonly NTSC_DVD_SCANLINES=525
+readyonly NTSC_DVD_HEIGHT=480
+readyonly NTSC_DVD_WIDTH=680
+readyonly NTSC_DVD_COLOR_SPACE=("smpte170m" "smpte240m")
 readyonly NTSC_FILM_FRAMERATE=24000/1001
 readyonly NTSC_FRAMERATE=30000/1001
-readyonly NTSC_SCANLINES=525
-readyonly DVD_NTSC_HEIGHT=480
 # Based on Dual layer Single Sided DVD-9 standard, max of a common DVD size 8.54GB (Bytes)
 readyonly DVD_MAX_SIZE=8540000000
+readyonly HD_COLOR_SPACE=("bt709" "bt2020")
 # ARG INPUT
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -78,6 +84,7 @@ while [[ $# -gt 0 ]]; do
       echo "  -i                    Set input and container type"
       echo "  -o,                   Set output file, path and container (default </Processed/<input_file>)"
       echo "  -p, --preset          Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed, k|keep  (default: medium)"
+      echo "  -t, --fix-type        Set the fix type: pal2ntsc|p2n, pal2ntscfilm|p2nf, pal2pal|p2p, ntsc2pal|n2p, ntsc2ntscfilm|n2nf, ntsc2ntsc|n2n, ntscfilm2pal|nf2p, ntscfilm2ntscfilm|nf2nf, ntscfilm2ntsc|nf2n  (default:pal2ntscfilm)"
       echo "  -cv, --video-codec    Set video codec: keep (maintain input codec), h266|vvc, h265|hevc, h264|avc, vp9, av1, av2, ffv1|lossless (default: h264)"
       echo "  -ca, --audio-codec    Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac, truehd ; Legacy: mp3 (default: ac3)"
       echo "  -d, --device          Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, mac) (default: auto)"
@@ -119,14 +126,19 @@ fi
 case "$OSTYPE" in
   darwin*)
     GPU=$(system_profiler SPDisplaysDataType)
+    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
   linux*)
     GPU=$(lspci | grep -i --color 'vga\|3d\|2d')
-    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
-    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
+    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
   msys*)
-    GPU=$(wmic path win32_VideoController get caption)
+    # GPU=$(wmic path win32_VideoController get caption)
+    GPU=$(lspci | grep -i --color 'vga\|3d\|2d')
+    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
   *)
     echo "Unknown platform: $OSTYPE"
@@ -165,6 +177,54 @@ case "$PRESET" in
     exit 2
     ;;
 esac
+
+get_fix_filters() {
+  case "$FIX_TYPE" in
+      pal2ntsc|p2n)
+        CORRECT_FPS_FILTER="fps=ntsc"
+        CORRECT_FPS=$(( NTSC_FRAMERATE ))
+      ;;
+      pal2ntscfilm|p2nf)
+        CORRECT_FPS_FILTER="fps=ntsc_film"
+        CORRECT_FPS=$(( NTSC_FILM_FRAMERATE ))
+      ;;
+      pal2pal|p2p)
+        CORRECT_FPS_FILTER="fps=source_fps"
+        CORRECT_FPS=$(( PAL_FRAMERATE ))
+      ;;
+      ntsc2pal|n2p)
+        CORRECT_FPS_FILTER="fps=pal"
+        CORRECT_FPS=$(( PAL_FRAMERATE ))
+      ;;
+      ntsc2ntscfilm|n2nf)
+        CORRECT_FPS_FILTER="fps=ntsc_film"
+        CORRECT_FPS=$(( NTSC_FILM_FRAMERATE ))
+      ;;
+      ntsc2ntsc|n2n)
+        CORRECT_FPS_FILTER="fps=source_fps"
+        CORRECT_FPS=$(( NTSC_FRAMERATE ))
+      ;;
+      ntscfilm2ntscfilm|nf2nf)
+        CORRECT_FPS_FILTER="fps=source_fps"
+        CORRECT_FPS=$(( NTSC_FILM_FRAMERATE ))
+      ;;
+      ntscfilm2ntsc|nf2n)
+        CORRECT_FPS_FILTER="fps=ntsc"
+        CORRECT_FPS=$(( NTSC_FRAMERATE ))
+      ;;
+      ntscfilm2pal|nf2p)
+        CORRECT_FPS_FILTER="fps=pal"
+        CORRECT_FPS=$(( PAL_FRAMERATE ))
+      ;;
+      *)
+      echo "Unknown fix-type $FIX_TYPE"
+      exit 2
+      ;;
+  esac
+
+  FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
+  INVERSE_FPS_CORRECTION=$(( 1.0 / FPS_CORRECTION ))
+}
 
 get_a_encode_args() {
   A_ENCODE_ARGS=(-c:a $A_CODEC -b:a 640k)
@@ -497,70 +557,42 @@ for F in $FILES; do
   esac
 
   # FILTER
-  case "$TYPE" in
-      auto)
-        CORRECT_FPS_FILTER="fps=ntsc_film"
-        CORRECT_FPS_FILTER="fps=source_fps"
-      ;;
-      ntsc_film)
-        CORRECT_FPS_FILTER="fps=ntsc_film"
-      ;;
-      ntsc)
-        CORRECT_FPS_FILTER="fps=ntsc"
-      ;;
-      pal)
-        CORRECT_FPS_FILTER="fps=pal"
-      ;;
-      br)
-        CORRECT_FPS_FILTER="fps=ntsc_film"
-      ;;
-      *)
-      echo "Unknown preset: $PRESET"
-      exit 2
-      ;;
-  esac
-  # Pal is 25 fps, NTSC is 23.976 for films or 29.97 for TV
-  PAL_TO_NTSC_FILM_CORRECTION=$(( /25025.0 ))
-  PAL_TO_NTSC_FILM_CORRECTION=$(( 24000/25025.0 ))
-  INVERSE_CORRECTION=$(( 1.0/$CORRECTION ))
-  CORRECT_SAMPLERATE=$((24000.0/1001.0))
+  get_fix_filters
 
-  VIDEO_FILTER_ARR=(setpts=PTS*$INVERSE_CORRECTION $CORRECT_FPS_FILTER)
+  VIDEO_FILTER_ARR=([0:V:0] setpts=PTS*$INVERSE_FPS_CORRECTION $CORRECT_FPS_FILTER)
   if [[ $DEINTERLACE ]] && (( $F_BFF > 0 || $F_TFF > 0 )); then
     VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
   fi
   FRAMERATE_ARGS=(-r:v $rate -vsync cfr)
-
+  LANG_FILTER="[0:a:m:language:eng]"
   # AUDIO_FILTER_ARR=(asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout])
-  AUDIO_FILTER_ARR=(asetrate=$CORRECTION*$samplerate aresample=resampler=soxr:osr=$samplerate)
+  AUDIO_FILTER_ARR=($LANG_FILTER -af asetrate=$CORRECTION*$samplerate aresample=resampler=soxr:osr=$samplerate)
   # , delimiter for sub arguments
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
   VIDEO_FILTER="$VIDEO_FILTER[vout]"
   AUDIO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
   AUDIO_FILTER="$AUDIO_FILTER[aout]"
-  FILTER_ARR=()
-  if [[ ! -z "$FILTER" ]]; then
-    FILTER_ARR+=([0:V:0] $VIDEO_FILTER)
+  # FILTER_ARR=()
+  if [[ ! -z "$VIDEO_FILTER" ]]; then
+    VIDEO_FILTER=(-vf $VIDEO_FILTER)
   fi
   if [[ ! -z "$AUDIO_FILTER" ]]; then
-    LANG_FILTER="[0:a:m:language:eng]"
-    FILTER_ARR+=($LANG_FILTER $AUDIO_FILTER)
+    AUDIO_FILTER_ARR+=($LANG_FILTER $AUDIO_FILTER)
   fi
   # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
   # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
   # ; delimiter for video + audio
-  FILTER="${(j[;])FILTER_ARR:#}"
-
-  if [[ ! -z "$FILTER" ]]; then
-    FILTER=(-filter_complex "$FILTER")
-    if [[ ! -z "$VIDEO_FILTER" ]]; then
-    FILTER+=(-map "[vout]")
-    fi
-
-    if [[ ! -z "$AUDIO_FILTER" ]]; then
-     FILTER+=(-map "[aout]")
-    fi
-  fi
+  # FILTER="${(j[;])FILTER_ARR:#}"
+  # if [[ ! -z "$FILTER" ]]; then
+  #   FILTER=(-filter_complex "$FILTER")
+  #   if [[ ! -z "$VIDEO_FILTER" ]]; then
+  #     FILTER+=(-map "[vout]")
+  #   fi
+  #
+  #   if [[ ! -z "$AUDIO_FILTER" ]]; then
+  #     FILTER+=(-map "[aout]")
+  #   fi
+  # fi
     # With outputfile
 #     if [[ $(uname) == "Darwin" ]]; then
 #         ffmpeg -y -loglevel error -stats -i $F -filter_complex "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:0]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" -map "[vout]" -map "[aout]" -aspect 4:3 -r:v $rate -vsync cfr -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 320k -profile:v main -tag:v hvc1 $OUTPUT/$FN_RESAMPLED
