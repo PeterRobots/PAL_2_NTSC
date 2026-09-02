@@ -62,6 +62,10 @@ while [[ $# -gt 0 ]]; do
       LANGUAGE="$2"
       shift 2
       ;;
+    -t|--fix-type)
+      FIX_TYPE="$2"
+      shift 2
+      ;;
     -bp|--bit-pixel-format)
       PIX_FMT="$2"
       shift 2
@@ -221,7 +225,6 @@ get_fix_filters() {
       exit 2
       ;;
   esac
-
   FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
   INVERSE_FPS_CORRECTION=$(( 1.0 / FPS_CORRECTION ))
 }
@@ -429,10 +432,10 @@ for F in $FILES; do
   echo "iteration = $counter"
   echo "file = $F"
 
-  BASE_FILE=$(basename $INPUT)
-  F_NAME="${BASE_FILE%.*}"
+  F_BASE=$(basename $INPUT)
+  F_NAME="${F_BASE%.*}"
   echo "File name = $F_NAME"
-  F_CONTAINER="${BASE_FILE:e}"
+  F_CONTAINER="${F_BASE:e}"
   echo "File container = $F_CONTAINER"
   F_DIR="${F:h}"
   echo "File dir = $F_DIR"
@@ -558,29 +561,33 @@ for F in $FILES; do
 
   # FILTER
   get_fix_filters
-
-  VIDEO_FILTER_ARR=([0:V:0] setpts=PTS*$INVERSE_FPS_CORRECTION $CORRECT_FPS_FILTER)
-  if [[ $DEINTERLACE ]] && (( $F_BFF > 0 || $F_TFF > 0 )); then
+  # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
+  VIDEO_FILTER_ARR=(-vf setpts=PTS*$INVERSE_FPS_CORRECTION $CORRECT_FPS_FILTER)
+  if [[ $DEINTERLACE ]] && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
     VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
   fi
-  FRAMERATE_ARGS=(-r:v $rate -vsync cfr)
-  LANG_FILTER="[0:a:m:language:eng]"
-  # AUDIO_FILTER_ARR=(asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout])
-  AUDIO_FILTER_ARR=($LANG_FILTER -af asetrate=$CORRECTION*$samplerate aresample=resampler=soxr:osr=$samplerate)
+
+  if [[ ! -z $LANGUAGE ]]; then
+    LANG_FILTER="[0:a:m:language:$LANGUAGE]"
+  else
+    LANG_FILTER="[0:a:0]"
+  fi
+
+  # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
+  AUDIO_FILTER_ARR=(asetrate=$CORRECTION*$samplerate aresample=resampler=soxr:osr=$samplerate)
   # , delimiter for sub arguments
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
   VIDEO_FILTER="$VIDEO_FILTER[vout]"
   AUDIO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
   AUDIO_FILTER="$AUDIO_FILTER[aout]"
-  # FILTER_ARR=()
   if [[ ! -z "$VIDEO_FILTER" ]]; then
-    VIDEO_FILTER=(-vf $VIDEO_FILTER)
+    V_FILTER_ARGS=(-vf $VIDEO_FILTER)
   fi
   if [[ ! -z "$AUDIO_FILTER" ]]; then
-    AUDIO_FILTER_ARR+=($LANG_FILTER $AUDIO_FILTER)
+    A_FILTER_ARGS=(-filter$LANG_FILTER $LANG_FILTER $AUDIO_FILTER)
   fi
-  # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
-  # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
+  FRAMERATE_ARGS=(-r:v $rate -vsync cfr)
+  # FILTER_ARR=()
   # ; delimiter for video + audio
   # FILTER="${(j[;])FILTER_ARR:#}"
   # if [[ ! -z "$FILTER" ]]; then
@@ -603,27 +610,27 @@ for F in $FILES; do
 # You have to input as a cuda stream or upload to the gpu in the filter to use.
 # ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i input output
 # cuda uses NVDEC to decode the input
-    F_OUTPUT=$PROCESSEDDIR/$FN_NVENC_RESAMPLED
+        # If file has size and is greater than 8.54GB (Dual layer Single Sided DVD-9 standard, max of a common DVD size) =  BLURAY
+        # if [ $(stat -f%z "$F" 2>/dev/null || stat -c%s "$F") -lt $MAX_DVD_SIZE ]; then
+            # echo file is not bluray
 #         ffmpeg -y -loglevel error -stats -hwaccel cuda -hwaccel_output_format cuda -i $F -filter_complex "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" -map "[vout]" -map "[aout]" -aspect 4:3 -r:v $rate -vsync cfr -c:v hevc_nvenc -b:v 5M -preset slow -c:a ac3 -b:a 640k $OUTPUT/$FN_RESAMPLED
 #         Want to use aac codec -b:a 320k, but ac3 has better surround support. (phone also won't play aac)
 #         Example of raw input to cuda for nvidia accelerated split filter
 #         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
-    if [ ! -e $OUTPUT/$FN_NVENC_RESAMPLED ] && [ ! -e "$F_OUTPUT" ]; then
-        # If file has size and is greater than 8.54GB (Dual layer Single Sided DVD-9 standard, max of a common DVD size) =  BLURAY
-        # if [ $(stat -f%z "$F" 2>/dev/null || stat -c%s "$F") -lt $MAX_DVD_SIZE ]; then
-            # echo file is not bluray
+    if [ ! -e $OUTPUT ]; then
             # echo "$PROCESSEDDIR/$FN_NVENC_RESAMPLED"
             # ffmpeg \
             #     -y -loglevel error -stats \
             #     -hwaccel cuda -hwaccel_output_format cuda -i $F \
             #     -init_hw_device cuda \
-            #     $FILTER
+            #     $VIDEO_FILTER \
             #      -r:v $rate -vsync cfr -c:v hevc_nvenc -preset p7 -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -cq 18 -c:a ac3 -b:a 640k "$PROCESSEDDIR/$FN_NVENC_RESAMPLED"
             echo "\
                 -y -loglevel error -stats \
                 $HW_DECODE_ARGS \
                 -i $F \
-                $FILTER \
+                $V_FILTER_ARGS \
+                $A_FILTER_ARGS \
                 $FRAMERATE_ARGS \
                 $V_ENCODE_ARGS \
                 $PROFILE_ARGS \
