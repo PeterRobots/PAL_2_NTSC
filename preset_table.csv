@@ -1,0 +1,8 @@
+Preset v | codec>h266|vvc h265|hevc h264|avc vp9 av1 av2 ffv1aac ac3|dolby eac3|dolbyplus opus vorbislpcm|pcm|none flac alac truehdmp3
+1fasterultrafastultrafast-quality good  -speed 5
+2fasterveryfastveryfast
+3fastfast
+4mediummediummedium-quality good  -speed 0
+5slowslow
+6slowslowerslower
+7slowerveryslowveryslow-quality best  -speed 0

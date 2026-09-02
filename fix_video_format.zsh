@@ -9,28 +9,28 @@ A_CODEC="ac3"
 LANGUAGE="keep"
 PIX_FMT="keep"
 FIX_TYPE="p2nf"
-DEINTERLACE=true
-NEED_FIXING=false
+DEINTERLACE=false
 A_BITRATE=320k
 
 # Constants
-readyonly DVD_WIDTH=720
+readonly SUPPORTED_GPUS=(nvidia amd intel apple)
+readonly DVD_WIDTH=720
 # PAL
-readyonly PAL_DVD_HEIGHT=576
-readyonly PAL_DVD_WIDTH=704
-readyonly PAL_DVD_SCANLINES=625
-readyonly PAL_DVD_COLOR_SPACE=("bt470bg")
-readyonly PAL_FRAMERATE=25
+readonly PAL_DVD_HEIGHT=576
+readonly PAL_DVD_WIDTH=704
+readonly PAL_DVD_SCANLINES=625
+readonly PAL_DVD_COLOR_SPACE=("bt470bg")
+readonly PAL_FRAMERATE=25.0
 # NTSC
-readyonly NTSC_DVD_SCANLINES=525
-readyonly NTSC_DVD_HEIGHT=480
-readyonly NTSC_DVD_WIDTH=680
-readyonly NTSC_DVD_COLOR_SPACE=("smpte170m" "smpte240m")
-readyonly NTSC_FILM_FRAMERATE=24000/1001
-readyonly NTSC_FRAMERATE=30000/1001
+readonly NTSC_DVD_SCANLINES=525
+readonly NTSC_DVD_HEIGHT=480
+readonly NTSC_DVD_WIDTH=680
+readonly NTSC_DVD_COLOR_SPACE=("smpte170m" "smpte240m")
+readonly NTSC_FILM_FRAMERATE=24000/1001.0
+readonly NTSC_FRAMERATE=30000/1001.0
 # Based on Dual layer Single Sided DVD-9 standard, max of a common DVD size 8.54GB (Bytes)
-readyonly DVD_MAX_SIZE=8540000000
-readyonly HD_COLOR_SPACE=("bt709" "bt2020")
+readonly DVD_MAX_SIZE=8540000000
+readonly HD_COLOR_SPACE=("bt709" "bt2020")
 # ARG INPUT
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -129,7 +129,7 @@ fi
 # PLATFORM
 case "$OSTYPE" in
   darwin*)
-    GPU=$(system_profiler SPDisplaysDataType)
+    GPU=$(system_profiler SPDisplaysDataType | grep -i "chipset")
     AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
     AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
@@ -153,17 +153,19 @@ esac
 case "$PRESET" in
     l|low)
     QUALITY=25
-    PRESET_ARG=7
+    PRESET_ARG=4
     BIT_RATE=192
     ;;
     m|medium)
     QUALITY=21
-    PRESET_ARG=4
+    GPU_PRESET_ARG=6
+    CPU_PRESET_ARG=slower
     BIT_RATE=256
     ;;
     h|high)
     QUALITY=18
-    PRESET_ARG=1
+    GPU_PRESET_ARG=7
+    CPU_PRESET_ARG=slower
     BIT_RATE=640
     ;;
     u|uncompresssed)
@@ -186,51 +188,49 @@ get_fix_filters() {
   case "$FIX_TYPE" in
       pal2ntsc|p2n)
         CORRECT_FPS_FILTER="fps=ntsc"
-        CORRECT_FPS=$(( NTSC_FRAMERATE ))
+        CORRECT_FPS=$NTSC_FRAMERATE
       ;;
       pal2ntscfilm|p2nf)
         CORRECT_FPS_FILTER="fps=ntsc_film"
-        CORRECT_FPS=$(( NTSC_FILM_FRAMERATE ))
+        CORRECT_FPS=$NTSC_FILM_FRAMERATE
       ;;
       pal2pal|p2p)
         CORRECT_FPS_FILTER="fps=source_fps"
-        CORRECT_FPS=$(( PAL_FRAMERATE ))
+        CORRECT_FPS=$PAL_FRAMERATE
       ;;
       ntsc2pal|n2p)
         CORRECT_FPS_FILTER="fps=pal"
-        CORRECT_FPS=$(( PAL_FRAMERATE ))
+        CORRECT_FPS=$PAL_FRAMERATE
       ;;
       ntsc2ntscfilm|n2nf)
         CORRECT_FPS_FILTER="fps=ntsc_film"
-        CORRECT_FPS=$(( NTSC_FILM_FRAMERATE ))
+        CORRECT_FPS=$NTSC_FILM_FRAMERATE
       ;;
       ntsc2ntsc|n2n)
         CORRECT_FPS_FILTER="fps=source_fps"
-        CORRECT_FPS=$(( NTSC_FRAMERATE ))
+        CORRECT_FPS=$NTSC_FRAMERATE
       ;;
       ntscfilm2ntscfilm|nf2nf)
         CORRECT_FPS_FILTER="fps=source_fps"
-        CORRECT_FPS=$(( NTSC_FILM_FRAMERATE ))
+        CORRECT_FPS=$NTSC_FILM_FRAMERATE
       ;;
       ntscfilm2ntsc|nf2n)
         CORRECT_FPS_FILTER="fps=ntsc"
-        CORRECT_FPS=$(( NTSC_FRAMERATE ))
+        CORRECT_FPS=$NTSC_FRAMERATE
       ;;
       ntscfilm2pal|nf2p)
         CORRECT_FPS_FILTER="fps=pal"
-        CORRECT_FPS=$(( PAL_FRAMERATE ))
+        CORRECT_FPS=$PAL_FRAMERATE
       ;;
       *)
       echo "Unknown fix-type $FIX_TYPE"
       exit 2
       ;;
   esac
-  FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
-  INVERSE_FPS_CORRECTION=$(( 1.0 / FPS_CORRECTION ))
 }
 
 get_a_encode_args() {
-  A_ENCODE_ARGS=(-c:a $A_CODEC -b:a 640k)
+  A_ENCODE_ARGS=(-c:a)
   case "$A_CODEC" in
       aac)
         A_ENCODE_ARGS+=(libfdk_aac -b:a ${BIT_RATE}k)
@@ -281,6 +281,20 @@ get_a_encode_args() {
   esac
 }
 
+get_device() {
+  for S_GPU in $SUPPORTED_GPUS; do
+    if [[ ${GPU:l} == *"$S_GPU"* ]]; then
+      GPU="$S_GPU"
+      DEVICE="gpu"
+      break
+    fi
+  done
+  # If no match to gpu use cpu
+  if [[ ${DEVICE:l} == "auto" ]]; then
+    DEVICE="cpu"
+  fi
+}
+
 get_device_args() {
   V_ENCODE_ARGS=(-c:v)
   case "$DEVICE" in
@@ -300,7 +314,7 @@ get_device_args() {
             V_ENCODE_ARGS+=(libx264 -preset $PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
           ;;
           vp9)
-            V_ENCODE_ARGS+=(libvpx-vp9 -quality $PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
+            V_ENCODE_ARGS+=(libvpx-vp9 -quality $PRESET_ARG -speed $PRESET_SPEED $PIX_FMT_ARGS -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1)
           ;;
           av1)
             QUALITY=$((QUALITY+2))
@@ -339,7 +353,7 @@ get_device_args() {
                 V_ENCODE_ARGS+=(av1_nvenc -preset p${PRESET_ARG} $PIX_FMT_ARGS -cq $QUALITY)
               ;;
               *)
-                echo "Unknown Video codec: $V_CODEC"
+                echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
                 exit 2
               ;;
             esac
@@ -395,7 +409,7 @@ get_device_args() {
             ;;
           esac
         ;;
-        mac)
+        apple|mac)
           HW_DECODE_ARGS=(-hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
           DEINTERLACE_FILTER="bwdif"
           case "$V_CODEC" in
@@ -427,6 +441,10 @@ get_device_args() {
 # -vf "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
 # -vf "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
 
+if [[ ${DEVICE:l} == "auto" ]]; then
+  get_device
+fi
+echo $DEVICE $GPU
 counter=1
 for F in $FILES; do
   echo "iteration = $counter"
@@ -441,10 +459,12 @@ for F in $FILES; do
   echo "File dir = $F_DIR"
   if [ -z $OUTPUT ]; then
       OUTPUT="$F_DIR/Processed/$F_NAME$F_CONTAINER"
+  fi
   echo "Output = $OUTPUT"
   F_CHAPTERS="${OUTPUT%.*}_chapters.txt"
   OUTPUT_DIR=${OUTPUT:h}
   LOG_DIR="$OUTPUT_DIR/Logs"
+
   if [[ ! -d $OUTPUT_DIR ]]; then
     mkdir -p $OUTPUT_DIR
   fi
@@ -505,22 +525,20 @@ for F in $FILES; do
   # F_A_CHANNELS=$(sed -nE 's/.*channels=(\d+).*/\1/p' $A_FFPROBE_ARR)
 
   if [[ $V_CODEC == 'keep' ]]; then
-      V_CODEC=$F_V_CODEC
+    V_CODEC=$F_V_CODEC
   fi
-
   get_device_args
-
   if [[ $A_CODEC == 'keep' ]]; then
-      A_CODEC=$F_A_CODEC
+    A_CODEC=$F_A_CODEC
   fi
 
   get_a_encode_args
 
-  if [[ $BITS == 'keep' ]]; then
-      PIX_FMT=$F_PIX_FMT
-  fi
-
-  case "$BITS" in
+  case "$PIX_FMT" in
+      keep)
+        PIX_FMT_ARGS=(-pix_fmt $F_V_PIX_FMT)
+        PIX_FMT_FILTER=(format=$F_V_PIX_FMT)
+      ;;
       8)
       case "$DEVICE" in
         cpu)
@@ -554,15 +572,18 @@ for F in $FILES; do
       esac
       ;;
       *)
-      echo "Unknown preset: $PRESET"
+      echo "Unknown bit pixel format: $PIX_FMT"
       exit 2
       ;;
   esac
 
   # FILTER
   get_fix_filters
+  FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
+  INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
+  echo $F_V_FPS $CORRECT_FPS $FPS_CORRECTION
   # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
-  VIDEO_FILTER_ARR=(-vf setpts=PTS*$INVERSE_FPS_CORRECTION $CORRECT_FPS_FILTER)
+  VIDEO_FILTER_ARR=(-vf "setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
   if [[ $DEINTERLACE ]] && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
     VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
   fi
@@ -574,7 +595,7 @@ for F in $FILES; do
   fi
 
   # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
-  AUDIO_FILTER_ARR=(asetrate=$CORRECTION*$samplerate aresample=resampler=soxr:osr=$samplerate)
+  AUDIO_FILTER_ARR=("asetrate=$CORRECTION*$samplerate" "aresample=resampler=soxr:osr=$samplerate")
   # , delimiter for sub arguments
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
   VIDEO_FILTER="$VIDEO_FILTER[vout]"
@@ -582,11 +603,17 @@ for F in $FILES; do
   AUDIO_FILTER="$AUDIO_FILTER[aout]"
   if [[ ! -z "$VIDEO_FILTER" ]]; then
     V_FILTER_ARGS=(-vf $VIDEO_FILTER)
+    FRAMERATE_ARGS=(-r:v $rate -vsync cfr)
+  else
+    V_FILTER_ARGS=()
+    FRAMERATE_ARGS=(-fps_mode passthrough)
   fi
   if [[ ! -z "$AUDIO_FILTER" ]]; then
     A_FILTER_ARGS=(-filter$LANG_FILTER $LANG_FILTER $AUDIO_FILTER)
+  else
+    A_FILTER_ARGS=()
   fi
-  FRAMERATE_ARGS=(-r:v $rate -vsync cfr)
+
   # FILTER_ARR=()
   # ; delimiter for video + audio
   # FILTER="${(j[;])FILTER_ARR:#}"
@@ -617,28 +644,36 @@ for F in $FILES; do
 #         Want to use aac codec -b:a 320k, but ac3 has better surround support. (phone also won't play aac)
 #         Example of raw input to cuda for nvidia accelerated split filter
 #         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
-    if [ ! -e $OUTPUT ]; then
-            # echo "$PROCESSEDDIR/$FN_NVENC_RESAMPLED"
-            # ffmpeg \
-            #     -y -loglevel error -stats \
-            #     -hwaccel cuda -hwaccel_output_format cuda -i $F \
-            #     -init_hw_device cuda \
-            #     $VIDEO_FILTER \
-            #      -r:v $rate -vsync cfr -c:v hevc_nvenc -preset p7 -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -cq 18 -c:a ac3 -b:a 640k "$PROCESSEDDIR/$FN_NVENC_RESAMPLED"
-            echo "\
-                -y -loglevel error -stats \
-                $HW_DECODE_ARGS \
-                -i $F \
-                $V_FILTER_ARGS \
-                $A_FILTER_ARGS \
-                $FRAMERATE_ARGS \
-                $V_ENCODE_ARGS \
-                $PROFILE_ARGS \
-                $BIT_FORMAT_ARGS \
-                $A_ENCODE_ARGS \
-                "$F_OUTPUT" \
-                "
-        fi
+    if [[ ! -e $OUTPUT ]]; then
+      # if [[ $PRESET=="keep" && $V_CODEC-="keep" && $A_CODEC=="keep" && $LANGUAGE=="keep" && $PIX_FMT=="keep" && $FIX_TYPE=="p2nf" && ! $DEINTERLACE ]]
+
+        # echo "$PROCESSEDDIR/$FN_NVENC_RESAMPLED"
+        # ffmpeg \
+          # -y -loglevel $LOG -stats \
+          # $HW_DECODE_ARGS \
+          # -i $F \
+          # $V_FILTER_ARGS \
+          # $A_FILTER_ARGS \
+          # $FRAMERATE_ARGS \
+          # $V_ENCODE_ARGS \
+          # $PROFILE_ARGS \
+          # $BIT_FORMAT_ARGS \
+          # $A_ENCODE_ARGS \
+          # "$F_OUTPUT" \
+cat << EOF
+-y -loglevel $LOG -stats
+$HW_DECODE_ARGS
+-i $F
+$V_FILTER_ARGS
+$A_FILTER_ARGS
+$FRAMERATE_ARGS
+$V_ENCODE_ARGS
+$PROFILE_ARGS
+$BIT_FORMAT_ARGS
+$A_ENCODE_ARGS
+$F_OUTPUT
+EOF
+        # fi
     else;
         echo "Processed file found"
     fi
