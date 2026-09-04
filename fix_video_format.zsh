@@ -180,60 +180,27 @@ case "$PRESET" in
 esac
 
 get_preset_values() {
-  local PRESET_ARR=$1
+  local PRESET_ARR="$1"
   local OUTPUT=$2
-  # echo "All elements: ${(P)PRESET_ARR[@]}"
+  local PRESET_VALUE
+  local local_arr=(${${(P)PRESET_ARR}[@]})
+  # echo "All elements: ${${(P)PRESET_ARR}[@]}"
+  # echo "1st element: ${${(P)PRESET_ARR}[1]}"
+  # echo "1st element: $local_arr[1]"
   case "$PRESET" in
     l|low)
-      PRESET_VALUE=${(P)PRESET_ARR[1]}
+      PRESET_VALUE=$local_arr[1]
     ;;
     m|medium)
-      PRESET_VALUE=${(P)PRESET_ARR[2]}
+      PRESET_VALUE=$local_arr[2]
     ;;
     h|high)
-      PRESET_VALUE=${(P)PRESET_ARR[3]}
+      PRESET_VALUE=$local_arr[3]
     ;;
   esac
-  typeset -g "$OUTPUT"=$PRESET_VALUE
+  typeset -g "$OUTPUT"="$PRESET_VALUE"
 }
 
-get_audio_bitrate() {
-  local VBR_QUALITY=$1
-  local BIT_RATES=$2
-  # Low to High order
-  get_preset_values VBR_QUALITY A_VBR_QUALITY
-  get_preset_values BIT_RATES A_BIT_RATE_PER_CHANNEL
-# case "$PRESET" in
-#   l|low)
-#   A_BIT_RATE_PER_CHANNEL=${(P)BIT_RATES[1]}
-#   A_VBR_QUALITY=${(P)VBR_QUALITY[1]}
-#   ;;
-#   m|medium)
-#     A_BIT_RATE_PER_CHANNEL=$BIT_RATES[1]
-#     A_VBR_QUALITY=$VBR_QUALITY[1]
-#   ;;
-#   h|high)
-#     A_BIT_RATE_PER_CHANNEL=$BIT_RATES[2]
-#     A_VBR_QUALITY=$VBR_QUALITY[2]
-#   ;;
-# esac
-}
-
-get_a_bitrate_method() {
-  local A_VBR_ARGS=$1
-  local A_CBR_ARGS=$2
-case "$A_BIT_RATE_METHOD" in
-  vbr|variable)
-      A_BITRATE_ARGS=$A_VBR_ARGS
-    ;;
-  cbr|constant)
-      A_BITRATE_ARGS=$A_CBR_ARGS
-    ;;
-  *)
-    echo "Unknown Audio bitrate method: $A_BIT_RATE_METHOD"
-    ;;
-esac
-}
 
 get_fix_filters() {
   case "$FIX_TYPE" in
@@ -280,56 +247,100 @@ get_fix_filters() {
   esac
 }
 
+get_a_bitrate() {
+  local NUM_CHANNELS=$2
+  local OUTPUT=$3
+  # Low to High order
+  get_preset_values $1 A_BIT_RATE_PER_CHANNEL
+  echo "Bit rate: " $A_BIT_RATE_PER_CHANNEL
+  COUNT_CHANNELS=0
+  echo "Number of channels: " $NUM_CHANNELS
+  for n in ${(s:.:)NUM_CHANNELS}; do
+    COUNT_CHANNELS=$((COUNT_CHANNELS + n))
+  done
+  BIT_RATE="$(( COUNT_CHANNELS * A_BIT_RATE_PER_CHANNEL ))k"
+  echo "Channel info: " $NUM_CHANNELS $COUNT_CHANNELS $A_BIT_RATE_PER_CHANNEL $BIT_RATE
+  typeset -g "$OUTPUT"="$BIT_RATE"
+}
+
+get_a_bitrate_method() {
+  local A_VBR_ARGS=$1
+  local A_CBR_ARGS=$2
+  local OUTPUT=$2
+  case "$A_BIT_RATE_METHOD" in
+    vbr|variable)
+        A_BITRATE_ARGS=$A_VBR_ARGS
+      ;;
+    cbr|constant)
+        A_BITRATE_ARGS=$A_CBR_ARGS
+      ;;
+    *)
+      echo "Unknown Audio bitrate method: $A_BIT_RATE_METHOD"
+      ;;
+  esac
+  typeset -g "$OUTPUT"=$A_BITRATE_ARGS
+}
+
 get_a_encode_args() {
+  local NUM_CHANNELS=$1
   A_ENCODE_ARGS=(-c:a)
-  A_BIT_RATE=64k
+  A_BIT_RATE="64k"
+  A_BIT_RATE_PER_CHANNEL=64
   A_CBR_METHOD=(-b:a $A_BIT_RATE)
   A_VBR_METHOD=(-q:a $A_VBR_QUALITY)
-  A_BIT_RATES=(64k 112k 160k)
-  A_VBR_QUALITIES=(0 4 9)
+  A_BIT_RATES_PER_CHANNEL_ARR=("64" "112" "160")
+  A_VBR_QUALITIES=("0" "4" "9")
   case "$A_CODEC" in
       aac)
         if (( ${AVAILABLE_A_CODECS[(Ie)libfdk_aac]} )); then
           # libfdk_aac is proprietary but a lot better, if available use it.
           A_VBR_QUALITIES=(2 4 5)
-          A_BIT_RATES=(40k 72k 112k)
-          get_audio_bitrate A_VBR_QUALITIES A_BIT_RATES
+          A_BIT_RATES_PER_CHANNEL_ARR=("40" "72" "112")
+          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+          get_preset_values VBR_QUALITY A_VBR_QUALITY
           A_CBR_METHOD=(-vbr 0 -b:a $A_BIT_RATE)
           A_VBR_METHOD=(-vbr $A_VBR_QUALITY)
-          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD
-          A_ENCODE_ARGS+=(libfdk_aac $A_BITRATE_ARGS)
+          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+          A_ENCODE_ARGS+=(libfdk_aac $A_BIT_RATE_ARGS)
         else
-          A_VBR_QUALITIES=(0.5 1.4 2.0)
-          A_BIT_RATES=(80k 112k 160k)
-          get_audio_bitrate A_VBR_QUALITIES A_BIT_RATES
-          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD
-          A_ENCODE_ARGS+=(aac $A_BITRATE_ARGS)
+          A_VBR_QUALITIES=("0.5" "1.4" "2.0")
+          A_BIT_RATES_PER_CHANNEL_ARR=("80" "112" "160")
+          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+          get_preset_values VBR_QUALITY A_VBR_QUALITY
+          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+          A_ENCODE_ARGS+=(aac $A_BIT_RATE_ARGS)
         fi
       ;;
       ac3|dolby)
-        get_audio_bitrate A_VBR_QUALITIES A_BIT_RATES
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_CBR_METHOD+=($((A_BIT_RATE_PER_CHANNEL * NUM_CHANNELS))k)
         A_BITRATE_ARGS=$A_CBR_METHOD
         A_ENCODE_ARGS+=(ac3 $A_BITRATE_ARGS)
       ;;
       eac3|dolbyplus)
-        get_audio_bitrate A_VBR_QUALITIES A_BIT_RATES
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_CBR_METHOD+=($((A_BIT_RATE_PER_CHANNEL * NUM_CHANNELS))k)
         A_BITRATE_ARGS=$A_CBR_METHOD
-        A_ENCODE_ARGS+=(eac3 $A_BITRATE_ARGS)
+        A_ENCODE_ARGS+=(eac3 $A_BIT_RATE_ARGS)
       ;;
       opus)
-        A_VBR_QUALITIES=(64k 96k 128k)
-        A_BIT_RATES=(64k 96k 128k)
-        get_audio_bitrate A_VBR_QUALITIES A_BIT_RATES
+        A_VBR_QUALITIES=("64" "96" "128")
+        A_BIT_RATES_PER_CHANNEL_ARR=("64" "96" "128")
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_a_bitrate A_VBR_QUALITIES $NUM_CHANNELS VBR_QUALITY
         A_VBR_METHOD=${A_CBR_METHOD}
-        A_CBR_METHOD+=(-vbr off)
-        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD
-        A_ENCODE_ARGS+=(libopus $A_BITRATE_ARGS)
+        A_CBR_METHOD=(-vbr off)+$A_CBR_METHOD
+        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+        A_ENCODE_ARGS+=(libopus $A_BIT_RATE_ARGS)
       ;;
       vorbis)
-        A_VBR_QUALITIES=(3.0 5.0 9.0)
-        get_audio_bitrate A_VBR_QUALITIES A_BIT_RATES
-        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD
-        A_ENCODE_ARGS+=(libvorbis $A_BITRATE_ARGS)
+        A_VBR_QUALITIES=("3.0" "5.0" "9.0")
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_BIT_RATE_ARGS=
+        A_ENCODE_ARGS+=(libvorbis $A_BIT_RATE_ARGS)
       ;;
       lpcm|pcm|none)
         A_ENCODE_ARGS+=(pcm_s16le)
@@ -344,10 +355,11 @@ get_a_encode_args() {
         A_ENCODE_ARGS+=(copy)
       ;;
       mp3)
-        A_VBR_QUALITIES=(7 3 0)
-        get_audio_bitrate A_VBR_QUALITIES A_BIT_RATES
-        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD
-        A_ENCODE_ARGS+=(libmp3lame $A_BITRATE_ARGS)
+        A_VBR_QUALITIES=("7" "3" "0")
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+        A_ENCODE_ARGS+=(libmp3lame $A_BIT_RATE_ARGS)
       ;;
       *)
       if (( ${AVAILABLE_A_CODECS[(Ie)$A_CODEC]} )); then
@@ -399,7 +411,7 @@ get_device_args() {
   V_ENCODE_ARGS=(-c:v)
   case "$DEVICE" in
     cpu)
-      CPU_PRESETS=(fast medium slow)
+      CPU_PRESETS=("fast" "medium" "slow")
       HW_DECODE_ARGS=""
       DEINTERLACE_FILTER="bwdif"
       case "$V_CODEC" in
@@ -481,7 +493,7 @@ get_device_args() {
           # Only deinterlace marked fields
           DEINTERLACE_FILTER="hwmap=derive_device=vulkan,format=vulkan,bwdif_vulkan=mode=send_frame"
           # HW_INIT_FILTER="hwupload"
-          GPU_PRESETS=(balanced quality high_quality)
+          GPU_PRESETS=("balanced" "quality" "high_quality")
           case "$V_CODEC" in
             h265|hevc)
               get_video_encoder_preset_quality GPU_PRESETS
@@ -509,7 +521,7 @@ get_device_args() {
           # -qsv_device /dev/dri/renderD128
           # 2 is advanced motion-adaptive, 1 is bob weaver
           DEINTERLACE_FILTER="vpp_qsv=deinterlace=2"
-          GPU_PRESETS=(5 3 1)
+          GPU_PRESETS=("5" "3" "1")
           case "$V_CODEC" in
             h265|hevc)
               get_video_encoder_preset_quality GPU_PRESETS
@@ -602,7 +614,7 @@ for F in $FILES; do
   # Audio
   typeset -A A_FFPROBE_DICT
   while IFS== read -r key value; do
-    A_FFPROBE_DICT=$value
+    A_FFPROBE_DICT[$key]=$value
   done < <(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,bit_rate,sample_rate,channels -of default=noprint_wrappers=1 $F)
 
   # codec_name=ac3
@@ -657,15 +669,7 @@ for F in $FILES; do
   fi
 
   get_device_args
-  get_a_encode_args
-
-  NUM_CHANNELS=0
-  for n in ${(s:.:)F_A_CHANNELS}; do
-    NUM_CHANNELS=$((NUM_CHANNELS + n))
-  done
-  A_BIT_RATE=$(( NUM_CHANNELS * A_BIT_RATE_PER_CHANNEL ))
-  echo ""$NUM_CHANNELS $A_BIT_RATE $F_A_CHANNELS
-  echo $NUM_CHANNELS $A_BIT_RATE $F_A_CHANNELS
+  get_a_encode_args $F_A_CHANNELS
 
   case "$PIX_FMT" in
       keep)
