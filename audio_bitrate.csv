@@ -1,0 +1,9 @@
+,,aac,aac he_v2, ac3|dolby (max 640), eac3|dolbyplus, opus, vorbis, lpcm|pcm|none, flac, alac, truehd, mp3
+Low,kbit/s per channel,64,8,64,48,48,48,n/a,n/a,n/a,n/a,64
+High,kbit/s per channel,112,24,160,128,128,160,n/a,n/a,n/a,n/a,128
+Low,2,128,16,128,96,96,96,n/a,n/a,n/a,n/a,128
+High,2,160,48,320,256,256,320,n/a,n/a,n/a,n/a,256
+Low,5.1,384,48,384,288,288,288,n/a,n/a,n/a,n/a,384
+High,5.1,480,144,640,768,768,960,n/a,n/a,n/a,n/a,768
+Low,7.1,512,64,n/a,384,384,384,n/a,n/a,n/a,n/a,512
+High,7.1,640,192,n/a,1024,1024,1280,n/a,n/a,n/a,n/a,1024

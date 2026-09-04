@@ -1,8 +1,9 @@
-Preset v | codec>h266|vvc h265|hevc h264|avc vp9 av1 av2 ffv1aac ac3|dolby eac3|dolbyplus opus vorbislpcm|pcm|none flac alac truehdmp3
-1fasterultrafastultrafast-quality good  -speed 5
-2fasterveryfastveryfast
-3fastfast
-4mediummediummedium-quality good  -speed 0
-5slowslow
-6slowslowerslower
-7slowerveryslowveryslow-quality best  -speed 0
+Preset v (low quality to high) | codec>,h266|vvc, h265|hevc, h264|avc, vp9, av1, ffv1,libfdk_aac (vbr),libfdk_aac (cbr),libfdk_aac HE_v2 (vbr),libfdk_aac HE_v2 (cbr),aac (vbr),aac (cbr), ac3|dolby, ac3|dolby (cbr), eac3|dolbyplus, eac3|dolbyplus (cbr), opus, opus (cbr) -vbr 0, vorbis (vbr), vorbis (cbr)-vbr off , mp3, mp3  (cbr)
+1,faster,ultrafast,ultrafast,-quality good -speed 5,12,n/a,-vbr 1,32,-vbr 1,8,0.1,64,n/a,64,n/a,64,64,64,-q 1,64,-aq 9,64
+2,faster,veryfast,veryfast,,10,n/a,-vbr 2,40,-vbr 2,11,0.4,72,n/a,80,n/a,74.6666666666667,74.6666666666667,74.6666666666667,-q 4,80,-aq 8,80
+3,fast,fast,,,8,n/a,-vbr 2,40,-vbr 2,14,0.8,84,n/a,96,n/a,85.3333333333333,85.3333333333333,85.3333333333333,-q 5,96,-aq 7,96
+4,medium,medium,medium,-quality good  -speed 0,6,n/a,-vbr 3,56,-vbr 3,18,1.1,100,n/a,112,n/a,96,96,96,-q 6,112,-aq 4,112
+5,slow,slow,,,4,n/a,-vbr 4,72,-vbr 4,20,1.4,112,n/a,128,n/a,106.666666666667,106.666666666667,106.666666666667,-q 7,128,-aq 3,128
+6,slow,slower,slower,,2,n/a,-vbr 4,72,-vbr 4,22,1.7,128,n/a,144,n/a,117.333333333333,117.333333333333,117.333333333333,-q 8,144,-aq 1,144
+7,slower,veryslow,veryslow,-quality best  -speed 0,0,n/a,-vbr 5,112,-vbr 5,24,2,160,n/a,160,n/a,128,128,128,-q 10,160,-aq 0,160
+Highest,,,,,,,,,,,,,,,,,,,,,,

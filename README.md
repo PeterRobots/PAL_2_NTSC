@@ -35,6 +35,27 @@ GPU: M1 (videotoolbox)
 
 Example: `./fix_video_format.zsh -i bad_pal_video.mkv -t pal -p medium -d gpu -v -o fixed_pal_video.mkv`
 
+# Presets
+1) Low
+	- Some quality loss compared to source
+	- Smallest file size (aiming for `~0.3X` compression)
+2) Medium
+	- Slight loss of quality compared to source
+	- Reasonable file size (`~0.5X` compression)
+3) High
+	- Intended to visually lossless compared to source
+	- Some compression compared to source (`~0.9X` compression)
+4) Keep
+# Audio
+I've aimed to minimise codec choice on quality with the presets, but there will be some variation. Additionally not all codecs offer all features, some do not offer `vbr` or `7.1` surround.
+
+Variable rate (`vbr`) will be more efficient than Constant (`cbr`), but may not playback as well on older devices (more computationally demanding).
+## Video
+Similarly to audio I aimed to minimise the effect of codec choice on the video quality where possible. Like with audio, not all codecs or hardware accelerated methods are equal and there will be some variation in quality.
+
+The settings were gathered more piecemeal compared to the audio, and I've tried tomatch my presets to the encoders presets.
+
+
 # Explanation
 Years ago I wanted a solution for fixing badly converted PAL/NTSC DVDs. This started me on a journey to learn how to use ffmpeg and various libraries and filters in order to achieve that.
 This project is the culmination of that and it's evolved into a larger framework that includes encoding/decoding options and tries to streamline using ffmpeg for those less familiar.
@@ -48,7 +69,7 @@ A) 100% and I encourage you to try it, it's feature rich, has cli and gui intera
 Q) https://github.com/staxrip/staxrip
 A) If you use windows it looks like a great option
 
-I justify this project as a wrapper for ffmpeg to simplify the for setting up a simple routine to fix, deinterlace and encode a wide selection of DVDs and Blurays in a user friendly consistently 'good' way. 
+I justify this project accessible script for fixing badly converted region formatted media with streamlined encoding options.
 ### Options
 The first choice is whether you want to use software `cpu` method or some kind of hardware accelerated method.
 
