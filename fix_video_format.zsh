@@ -11,6 +11,7 @@ PIX_FMT="keep"
 FIX_TYPE="p2nf"
 A_BIT_RATE_METHOD="vbr"
 DEINTERLACE=true
+FORCE=false
 
 # Constants
 readonly SUPPORTED_GPUS=(nvidia amd intel apple)
@@ -85,6 +86,10 @@ while [[ $# -gt 0 ]]; do
       ;;
       --deinterlace)
         DEINTERLACE=false
+        shift 1
+      ;;
+      -f|--force)
+        FORCE=true
         shift 1
       ;;
     --help)
@@ -205,39 +210,39 @@ get_preset_values() {
 get_fix_filters() {
   case "$FIX_TYPE" in
       pal2ntsc|p2n)
-        CORRECT_FPS_FILTER="fps=ntsc"
+        CORRECT_FPS_FILTER="fps=fps=ntsc"
         CORRECT_FPS=$NTSC_FRAMERATE
       ;;
       pal2ntscfilm|p2nf)
-        CORRECT_FPS_FILTER="fps=ntsc_film"
+        CORRECT_FPS_FILTER="fps=fps=ntsc_film"
         CORRECT_FPS=$NTSC_FILM_FRAMERATE
       ;;
       pal2pal|p2p)
-        CORRECT_FPS_FILTER="fps=source_fps"
+        CORRECT_FPS_FILTER="fps=fps=source_fps"
         CORRECT_FPS=$PAL_FRAMERATE
       ;;
       ntsc2pal|n2p)
-        CORRECT_FPS_FILTER="fps=pal"
+        CORRECT_FPS_FILTER="fps=fps=pal"
         CORRECT_FPS=$PAL_FRAMERATE
       ;;
       ntsc2ntscfilm|n2nf)
-        CORRECT_FPS_FILTER="fps=ntsc_film"
+        CORRECT_FPS_FILTER="fps=fps=ntsc_film"
         CORRECT_FPS=$NTSC_FILM_FRAMERATE
       ;;
       ntsc2ntsc|n2n)
-        CORRECT_FPS_FILTER="fps=source_fps"
+        CORRECT_FPS_FILTER="fps=fps=source_fps"
         CORRECT_FPS=$NTSC_FRAMERATE
       ;;
       ntscfilm2ntscfilm|nf2nf)
-        CORRECT_FPS_FILTER="fps=source_fps"
+        CORRECT_FPS_FILTER="fps=fps=source_fps"
         CORRECT_FPS=$NTSC_FILM_FRAMERATE
       ;;
       ntscfilm2ntsc|nf2n)
-        CORRECT_FPS_FILTER="fps=ntsc"
+        CORRECT_FPS_FILTER="fps=fps=ntsc"
         CORRECT_FPS=$NTSC_FRAMERATE
       ;;
       ntscfilm2pal|nf2p)
-        CORRECT_FPS_FILTER="fps=pal"
+        CORRECT_FPS_FILTER="fps=fps=pal"
         CORRECT_FPS=$PAL_FRAMERATE
       ;;
       *)
@@ -249,18 +254,21 @@ get_fix_filters() {
 
 get_a_bitrate() {
   local NUM_CHANNELS=$2
-  local OUTPUT=$3
+  local MAX_BIT_RATE=$3
+  local MIN_BIT_RATE=$4
+  local OUTPUT=$5
   # Low to High order
   get_preset_values $1 A_BIT_RATE_PER_CHANNEL
-  echo "Bit rate: " $A_BIT_RATE_PER_CHANNEL
+  # echo "Bit rate: " $A_BIT_RATE_PER_CHANNEL
   COUNT_CHANNELS=0
-  echo "Number of channels: " $NUM_CHANNELS
+  # echo "Number of channels: " $NUM_CHANNELS
   for n in ${(s:.:)NUM_CHANNELS}; do
     COUNT_CHANNELS=$((COUNT_CHANNELS + n))
   done
-  BIT_RATE="$(( COUNT_CHANNELS * A_BIT_RATE_PER_CHANNEL ))k"
-  echo "Channel info: " $NUM_CHANNELS $COUNT_CHANNELS $A_BIT_RATE_PER_CHANNEL $BIT_RATE
-  typeset -g "$OUTPUT"="$BIT_RATE"
+  BIT_RATE=$(( COUNT_CHANNELS * A_BIT_RATE_PER_CHANNEL ))
+  BIT_RATE=$(( BIT_RATE < MIN_BIT_RATE ? MIN_BIT_RATE : (BIT_RATE > MAX_BIT_RATE ? MAX_BIT_RATE : BIT_RATE) ))
+  # echo "Channel info: " $NUM_CHANNELS $COUNT_CHANNELS $A_BIT_RATE_PER_CHANNEL $BIT_RATE
+  typeset -g "$OUTPUT"=""$BIT_RATE"k"
 }
 
 get_a_bitrate_method() {
@@ -283,11 +291,13 @@ get_a_bitrate_method() {
 
 get_a_encode_args() {
   local NUM_CHANNELS=$1
+  local MAX_BIT_RATE=1024
+  local MIN_BIT_RATE=64
   A_ENCODE_ARGS=(-c:a)
   A_BIT_RATE="64k"
   A_BIT_RATE_PER_CHANNEL=64
-  A_CBR_METHOD=(-b:a $A_BIT_RATE)
-  A_VBR_METHOD=(-q:a $A_VBR_QUALITY)
+  A_CBR_METHOD=(-b:a)
+  A_VBR_METHOD=(-q:a)
   A_BIT_RATES_PER_CHANNEL_ARR=("64" "112" "160")
   A_VBR_QUALITIES=("0" "4" "9")
   case "$A_CODEC" in
@@ -296,7 +306,7 @@ get_a_encode_args() {
           # libfdk_aac is proprietary but a lot better, if available use it.
           A_VBR_QUALITIES=(2 4 5)
           A_BIT_RATES_PER_CHANNEL_ARR=("40" "72" "112")
-          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
           get_preset_values VBR_QUALITY A_VBR_QUALITY
           A_CBR_METHOD=(-vbr 0 -b:a $A_BIT_RATE)
           A_VBR_METHOD=(-vbr $A_VBR_QUALITY)
@@ -305,31 +315,35 @@ get_a_encode_args() {
         else
           A_VBR_QUALITIES=("0.5" "1.4" "2.0")
           A_BIT_RATES_PER_CHANNEL_ARR=("80" "112" "160")
-          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
           get_preset_values VBR_QUALITY A_VBR_QUALITY
+          A_CBR_METHOD+=($A_BIT_RATE)
+          A_VBR_METHOD+=($A_VBR_QUALITY)
           get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
           A_ENCODE_ARGS+=(aac $A_BIT_RATE_ARGS)
         fi
       ;;
       ac3|dolby)
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        MAX_BIT_RATE=640
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
         get_preset_values VBR_QUALITY A_VBR_QUALITY
-        A_CBR_METHOD+=($((A_BIT_RATE_PER_CHANNEL * NUM_CHANNELS))k)
+        A_CBR_METHOD+=($A_BIT_RATE)
         A_BITRATE_ARGS=$A_CBR_METHOD
         A_ENCODE_ARGS+=(ac3 $A_BITRATE_ARGS)
       ;;
       eac3|dolbyplus)
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
         get_preset_values VBR_QUALITY A_VBR_QUALITY
-        A_CBR_METHOD+=($((A_BIT_RATE_PER_CHANNEL * NUM_CHANNELS))k)
+        A_CBR_METHOD+=($A_BIT_RATE)
         A_BITRATE_ARGS=$A_CBR_METHOD
         A_ENCODE_ARGS+=(eac3 $A_BIT_RATE_ARGS)
       ;;
       opus)
         A_VBR_QUALITIES=("64" "96" "128")
         A_BIT_RATES_PER_CHANNEL_ARR=("64" "96" "128")
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
         get_a_bitrate A_VBR_QUALITIES $NUM_CHANNELS VBR_QUALITY
+        A_CBR_METHOD+=($A_BIT_RATE)
         A_VBR_METHOD=${A_CBR_METHOD}
         A_CBR_METHOD=(-vbr off)+$A_CBR_METHOD
         get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
@@ -337,9 +351,9 @@ get_a_encode_args() {
       ;;
       vorbis)
         A_VBR_QUALITIES=("3.0" "5.0" "9.0")
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
         get_preset_values VBR_QUALITY A_VBR_QUALITY
-        A_BIT_RATE_ARGS=
+        A_VBR_METHOD+=($A_VBR_QUALITY)
+        A_BIT_RATE_ARGS=$A_VBR_METHOD
         A_ENCODE_ARGS+=(libvorbis $A_BIT_RATE_ARGS)
       ;;
       lpcm|pcm|none)
@@ -356,8 +370,10 @@ get_a_encode_args() {
       ;;
       mp3)
         A_VBR_QUALITIES=("7" "3" "0")
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS A_BIT_RATE
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
         get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_CBR_METHOD+=($A_BIT_RATE)
+        A_VBR_METHOD+=($A_VBR_QUALITY)
         get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
         A_ENCODE_ARGS+=(libmp3lame $A_BIT_RATE_ARGS)
       ;;
@@ -592,7 +608,7 @@ for F in $FILES; do
   F_DIR="${F:h}"
   # echo "File dir = $F_DIR"
   if [ -z $OUTPUT ]; then
-      OUTPUT="$F_DIR/Processed/$F_NAME$F_CONTAINER"
+      OUTPUT="$F_DIR/Processed/$F_NAME.$F_CONTAINER"
   fi
   # echo "Output = $OUTPUT"
   F_CHAPTERS="${OUTPUT%.*}_chapters.txt"
@@ -719,7 +735,7 @@ for F in $FILES; do
   FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
   INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
   # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
-  VIDEO_FILTER_ARR=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
+  VIDEO_FILTER_ARR=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER $PIX_FMT_FILTER)
   if [[ $DEINTERLACE ]] && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
     VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
   fi
@@ -731,20 +747,20 @@ for F in $FILES; do
   fi
 
   # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
-  AUDIO_FILTER_ARR=("asetrate=$CORRECTION*$F_A_SAMPLERATE" "aresample=resampler=soxr:osr=$F_A_SAMPLERATE")
+  AUDIO_FILTER_ARR=("asetrate=$FPS_CORRECTION*$F_A_SAMPLERATE" "aresample=resampler=soxr:osr=$F_A_SAMPLERATE")
   # , delimiter for sub arguments
-  echo "Video filter array: ${VIDEO_FILTER_ARR[@]}"
+  # echo "Video filter array: ${VIDEO_FILTER_ARR[@]}"
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
-  echo "Video filter: $VIDEO_FILTER"
+  # echo "Video filter: $VIDEO_FILTER"
   # VIDEO_FILTER="${VIDEO_FILTER}[vout]"
   # echo "Video filter: $VIDEO_FILTER"
   AUDIO_FILTER="${(j[,])AUDIO_FILTER_ARR:#}"
-  echo "Audio filter: $AUDIO_FILTER"
+  # echo "Audio filter: $AUDIO_FILTER"
   # AUDIO_FILTER="${AUDIO_FILTER}[aout]"
   # echo "Audio filter: $AUDIO_FILTER"
   if [[ ! -z "$VIDEO_FILTER" ]]; then
     V_FILTER_ARGS=(-vf \"$VIDEO_FILTER\")
-    FRAMERATE_ARGS=(-r:v $rate -vsync cfr)
+    FRAMERATE_ARGS=(-r:v $CORRECT_FPS -vsync cfr)
   else
     V_FILTER_ARGS=()
     FRAMERATE_ARGS=(-fps_mode passthrough)
@@ -785,36 +801,32 @@ for F in $FILES; do
 #         Want to use aac codec -b:a 320k, but ac3 has better surround support. (phone also won't play aac)
 #         Example of raw input to cuda for nvidia accelerated split filter
 #         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
-    if [[ ! -e $OUTPUT ]]; then
+    if [[ ! -e $OUTPUT || $FORCE ]]; then
       # if [[ $PRESET=="keep" && $V_CODEC-="keep" && $A_CODEC=="keep" && $LANGUAGE=="keep" && $PIX_FMT=="keep" && $FIX_TYPE=="p2nf" && ! $DEINTERLACE ]]
 
-        # echo "$PROCESSEDDIR/$FN_NVENC_RESAMPLED"
-        # ffmpeg \
-          # -y -loglevel $LOG -stats \
-          # $HW_DECODE_ARGS \
-          # -i $F \
-          # $V_FILTER_ARGS \
-          # $A_FILTER_ARGS \
-          # $FRAMERATE_ARGS \
-          # $V_ENCODE_ARGS \
-          # $PROFILE_ARGS \
-          # $BIT_FORMAT_ARGS \
-          # $A_ENCODE_ARGS \
-          # "$F_OUTPUT" \
-cat << EOF
--y -loglevel $LOG -stats
-$HW_DECODE_ARGS
--i $F
-$V_FILTER_ARGS
-$A_FILTER_ARGS
-$FRAMERATE_ARGS
-$V_ENCODE_ARGS
-$PROFILE_ARGS
-$BIT_FORMAT_ARGS
-$A_ENCODE_ARGS
-$F_OUTPUT
-EOF
-        # fi
+      echo "-y -loglevel $LOG -stats"
+      echo $HW_DECODE_ARGS
+      echo "-i $F"
+      echo $V_FILTER_ARGS
+      echo $A_FILTER_ARGS
+      echo $FRAMERATE_ARGS
+      echo $V_ENCODE_ARGS
+      echo $PIX_FMT_ARGS
+      echo $A_ENCODE_ARGS
+      echo $OUTPUT
+
+      ffmpeg \
+        -y -loglevel $LOG -stats \
+        $HW_DECODE_ARGS \
+        -i "$F" \
+        $V_FILTER_ARGS \
+        $A_FILTER_ARGS \
+        $FRAMERATE_ARGS \
+        $V_ENCODE_ARGS \
+        $PIX_FMT_ARGS \
+        $A_ENCODE_ARGS \
+        "$OUTPUT"
+      # fi
     else;
         echo "Processed file found"
     fi
