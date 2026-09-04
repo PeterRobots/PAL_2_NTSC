@@ -475,7 +475,7 @@ get_device_args() {
         nvidia)
             HW_DECODE_ARGS=(-hwaccel cuda -hwaccel_output_format cuda)
             # HW_INIT_FILTER=""
-            DEINTERLACE_FILTER="bwdif_cuda"
+            DEINTERLACE_FILTER="bwdif_cuda=mode=0"
             GPU_PRESETS=("p4" "p6" "p7")
             case "$V_CODEC" in
               h265|hevc)
@@ -735,11 +735,13 @@ for F in $FILES; do
   FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
   INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
   # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
-  VIDEO_FILTER_ARR=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER $PIX_FMT_FILTER)
   if [[ $DEINTERLACE ]] && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
-    VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
+    VIDEO_FILTER_ARR=($DEINTERLACE_FILTER)
+  else
+    VIDEO_FILTER_ARR=()
   fi
-
+  VIDEO_FILTER_ARR+=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
+  # VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
   if [[ $LANGUAGE != "keep" ]]; then
     LANG_FILTER="a:m:language:$LANGUAGE"
   else
@@ -811,7 +813,7 @@ for F in $FILES; do
       echo $A_FILTER_ARGS
       echo $FRAMERATE_ARGS
       echo $V_ENCODE_ARGS
-      echo $PIX_FMT_ARGS
+      # echo $PIX_FMT_ARGS
       echo $A_ENCODE_ARGS
       echo $OUTPUT
 
@@ -823,7 +825,6 @@ for F in $FILES; do
         $A_FILTER_ARGS \
         $FRAMERATE_ARGS \
         $V_ENCODE_ARGS \
-        $PIX_FMT_ARGS \
         $A_ENCODE_ARGS \
         "$OUTPUT"
       # fi
