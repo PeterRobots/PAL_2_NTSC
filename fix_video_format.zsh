@@ -646,6 +646,7 @@ for F in $FILES; do
   fi
   # echo "Output = $OUTPUT"
   F_CHAPTERS="${OUTPUT%.*}_chapters.txt"
+  F_SUBTITLES="${OUTPUT%.*}_subtitles.$F_CONTAINER"
   OUTPUT_DIR=${OUTPUT:h}
   LOG_DIR="$OUTPUT_DIR/Logs"
 
@@ -886,19 +887,27 @@ for F in $FILES; do
       echo $DISPOSITION_ARGS
       echo $OUTPUT
       # echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
+      ffmpeg \
+      -itsscale $((FPS_CORRECTION)) \
+      -i "$F" \
+      -map 0:s \
+      -c:s copy \
+      $F_SUBTITLES
 
-      # ffmpeg \
-      #   -y -loglevel $LOG -stats \
-      #   $HW_DECODE_ARGS \
-      #   -i "$F" \
-      #   $MAP_ARGS \
-      #   $V_FILTER_ARGS \
-      #   $V_ENCODE_ARGS \
-      #   $FRAMERATE_ARGS \
-      #   $A_FILTER_ARGS \
-      #   $A_ENCODE_ARGS \
-      #   "$OUTPUT"
-      ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i "$F" $MAP_ARGS $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS $S_ENCODE_ARGS $DISPOSITION_ARGS "$OUTPUT"
+      ffmpeg \
+        -y -loglevel $LOG -stats \
+        $HW_DECODE_ARGS \
+        -i "$F" \
+        $MAP_ARGS \
+        $V_FILTER_ARGS \
+        $V_ENCODE_ARGS \
+        $FRAMERATE_ARGS \
+        $A_FILTER_ARGS \
+        $A_ENCODE_ARGS \
+        $S_ENCODE_ARGS \
+        $DISPOSITION_ARGS \
+        "$OUTPUT"
+      # ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i "$F" $MAP_ARGS $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS $S_ENCODE_ARGS $DISPOSITION_ARGS "$OUTPUT"
 
       # Lossless video and subtitle timestamp changes with audio resampling
       # ffmpeg \
