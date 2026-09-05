@@ -876,15 +876,16 @@ for F in $FILES; do
 
       echo "-y -loglevel $LOG -stats"
       echo $HW_DECODE_ARGS
+      echo $ITSSCALE_ARGS
       echo "-i $F"
       echo $MAP_ARGS
       echo $V_FILTER_ARGS
       echo $V_ENCODE_ARGS
-      echo $FRAMERATE_ARGS
       echo $A_FILTER_ARGS
       echo $A_ENCODE_ARGS
       echo $S_ENCODE_ARGS
       echo $DISPOSITION_ARGS
+      echo $FRAMERATE_ARGS
       echo $OUTPUT
       # echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
       ffmpeg \
@@ -897,15 +898,16 @@ for F in $FILES; do
       ffmpeg \
         -y -loglevel $LOG -stats \
         $HW_DECODE_ARGS \
+        $ITSSCALE_ARGS \
         -i "$F" \
         $MAP_ARGS \
         $V_FILTER_ARGS \
         $V_ENCODE_ARGS \
-        $FRAMERATE_ARGS \
         $A_FILTER_ARGS \
         $A_ENCODE_ARGS \
         $S_ENCODE_ARGS \
         $DISPOSITION_ARGS \
+        $FRAMERATE_ARGS \
         "$OUTPUT"
       # ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i "$F" $MAP_ARGS $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS $S_ENCODE_ARGS $DISPOSITION_ARGS "$OUTPUT"
 
