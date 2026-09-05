@@ -405,9 +405,38 @@ get_device() {
   fi
 }
 
-get_video_encoder_preset_quality() {
-  local PRESET_QUALITIES=$1
-  get_preset_values PRESET_QUALITIES V_PRESET_ARG
+select_on_device(){
+  local PRESET_ARR="$1"
+  local OUTPUT=$2
+  local PRESET_VALUE
+  local local_arr=(${${(P)PRESET_ARR}[@]})
+
+  case "$DEVICE" in
+    cpu)
+      PRESET_VALUE=$local_arr[1]
+    ;;
+    gpu)
+      case "$GPU" in
+        nvidia)
+          PRESET_VALUE=$local_arr[2]
+        ;;
+        amd)
+          PRESET_VALUE=$local_arr[3]
+        ;;
+        intel)
+          PRESET_VALUE=$local_arr[4]
+        ;;
+        apple|mac)
+          PRESET_VALUE=$local_arr[5]
+        ;;
+      esac
+    ;;
+    *)
+    echo "Unknown device: $DEVICE"
+    exit 2
+    ;;
+  esac
+  typeset -g "$OUTPUT"="$PRESET_VALUE"
 }
 
 get_device_args() {
@@ -421,35 +450,35 @@ get_device_args() {
           h266|vvc)
             QUALITY=$((QUALITY+3))
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libvvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
+            V_ENCODE_ARGS+=(libvvenc -preset $V_PRESET_ARG -qp $QUALITY)
           ;;
           h265|hevc)
             QUALITY=$((QUALITY+2))
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libx265 -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
+            V_ENCODE_ARGS+=(libx265 -preset $V_PRESET_ARG -crf $QUALITY)
           ;;
           h264|avc)
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libx264 -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
+            V_ENCODE_ARGS+=(libx264 -preset $V_PRESET_ARG -crf $QUALITY)
           ;;
           vp9)
             CPU_PRESETS=(2 1 0)
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libvpx-vp9 -cpu-used $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1)
+            V_ENCODE_ARGS+=(libvpx-vp9 -cpu-used $V_PRESET_ARG -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1)
           ;;
           av1)
             CPU_PRESETS=(8 6 4)
             get_preset_values CPU_PRESETS V_PRESET_ARG
             QUALITY=$((QUALITY+2))
-            V_ENCODE_ARGS+=(libsvtav1 -preset $V_PRESET_ARG -svtav1-params tune=0 $PIX_FMT_ARGS -crf $QUALITY)
+            V_ENCODE_ARGS+=(libsvtav1 -preset $V_PRESET_ARG -svtav1-params tune=0 -crf $QUALITY)
           ;;
           ffv1|lossless)
             # level 3 is version 3, the currently best version
-            V_ENCODE_ARGS+=(ffv1 -level 3 $PIX_FMT_ARGS)
+            V_ENCODE_ARGS+=(ffv1 -level 3)
           ;;
           mpeg2video)
           # qscale is from 2-31, 2 is highest quality
-            V_ENCODE_ARGS+=(mpeg2video $PIX_FMT_ARGS -qscale:v $(QUALITY-16))
+            V_ENCODE_ARGS+=(mpeg2video -qscale:v $(QUALITY-16))
           ;;
           *)
           echo "Unknown Video codec: $V_CODEC"
@@ -468,18 +497,18 @@ get_device_args() {
               h265|hevc)
                 get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY+1))
-                V_ENCODE_ARGS+=(hevc_nvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -cq $QUALITY)
+                V_ENCODE_ARGS+=(hevc_nvenc -preset $V_PRESET_ARG -cq $QUALITY)
               ;;
               h264|avc)
                 # get_preset_values GPU_PRESETS V_PRESET_ARG
                 get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY-1))
-                V_ENCODE_ARGS+=(h264_nvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -cq $QUALITY)
+                V_ENCODE_ARGS+=(h264_nvenc -preset $V_PRESET_ARG -cq $QUALITY)
               ;;
               av1)
                 get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY+1))
-                V_ENCODE_ARGS+=(av1_nvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -cq $QUALITY)
+                V_ENCODE_ARGS+=(av1_nvenc -preset $V_PRESET_ARG -cq $QUALITY)
               ;;
               *)
                 echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -502,16 +531,16 @@ get_device_args() {
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
               # Alternative to -qp: -rc cqp -qp_i $QUALITY -qp_p $QUALITY -qp_b $QUALITY
-              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
+              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG -qp $QUALITY)
             ;;
             h264|avc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
-              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
+              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG -qp $QUALITY)
             ;;
             av1)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
+              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG -qp $QUALITY)
             ;;
             *)
               echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -529,16 +558,16 @@ get_device_args() {
             h265|hevc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
+              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
             ;;
             h264|avc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
-              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
+              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
             ;;
             av1)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(av1_qsv -preset $V_PRESET_ARG $PIX_FMT_ARGS -global_quality $QUALITY -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1)
+              V_ENCODE_ARGS+=(av1_qsv -preset $V_PRESET_ARG -global_quality $QUALITY -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1)
             ;;
             *)
               echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -553,11 +582,11 @@ get_device_args() {
             h265|hevc)
               QUALITY=$((4*(QUALITY)))
               # -tag:v hvc1 sets fourcc code to apple quicktime playback compatibility, hev1 is default fourcc code and not recognised by apple.
-              V_ENCODE_ARGS+=(hevc_videotoolbox -tag:v hvc1 $PIX_FMT_ARGS -q:v $QUALITY)
+              V_ENCODE_ARGS+=(hevc_videotoolbox -tag:v hvc1 -q:v $QUALITY)
             ;;
             h264|avc)
               QUALITY=$((4*(QUALITY+2)))
-              V_ENCODE_ARGS+=(h264_videotoolbox $PIX_FMT_ARGS -q:v $QUALITY)
+              V_ENCODE_ARGS+=(h264_videotoolbox -q:v $QUALITY)
             ;;
             *)
               echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -671,13 +700,14 @@ for F in $FILES; do
     A_CODEC=$F_A_CODEC
   fi
 
-  get_device_args
   get_a_encode_args $F_A_CHANNELS
 
   case "$PIX_FMT" in
       keep)
         PIX_FMT_ARGS=(-pix_fmt $F_V_PIX_FMT)
-        PIX_FMT_FILTER=(format=$F_V_PIX_FMT)
+        # CPU CUDA AMF QSV VIDEOTOOLBOX
+        PIX_FMT_FILTERS=(format=$F_V_PIX_FMT scale_cuda=format=$F_V_PIX_FMT,hwdownload format=$F_V_PIX_FMT scale_qsv=format=$F_V_PIX_FMT hwdownload,format=$F_V_PIX_FMT)
+        select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
       ;;
       8)
       case "$DEVICE" in
@@ -686,8 +716,10 @@ for F in $FILES; do
           PIX_FMT_FILTER=(format=yuv420p)
         ;;
         gpu)
-          PIX_FMT_ARGS=(-pix_fmt nv12)
-          PIX_FMT_FILTER=(format=nv12)
+          PIX_FMT="nv12"
+          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
+          PIX_FMT_FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
+          select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
         ;;
         *)
           echo "Unknown device: $DEVICE"
@@ -702,8 +734,10 @@ for F in $FILES; do
           PIX_FMT_FILTER=(format=yuv420p10le)
         ;;
         gpu)
-          PIX_FMT_ARGS=(-pix_fmt p010le)
-          PIX_FMT_FILTER=(format=p010le)
+          PIX_FMT="p010le"
+          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
+          PIX_FMT_FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
+          select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
         ;;
         *)
           echo "Unknown device: $DEVICE"
@@ -717,6 +751,7 @@ for F in $FILES; do
       ;;
   esac
 
+  get_device_args
   # FILTER
   get_fix_filters
   FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
@@ -748,14 +783,14 @@ for F in $FILES; do
   # AUDIO_FILTER="${AUDIO_FILTER}[aout]"
   # echo "Audio filter: $AUDIO_FILTER"
   if [[ ! -z "$VIDEO_FILTER" ]]; then
-    V_FILTER_ARGS=(-vf \"$VIDEO_FILTER\")
+    V_FILTER_ARGS=(-vf ${(qq)VIDEO_FILTER})
     FRAMERATE_ARGS=(-r $CORRECT_FPS -fps_mode cfr)
   else
     V_FILTER_ARGS=()
     FRAMERATE_ARGS=(-fps_mode passthrough)
   fi
   if [[ ! -z "$AUDIO_FILTER" ]]; then
-    A_FILTER_ARGS=(-filter:$LANG_FILTER \"$AUDIO_FILTER\")
+    A_FILTER_ARGS=(-filter:$LANG_FILTER ${(qq)AUDIO_FILTER})
   else
     A_FILTER_ARGS=()
   fi
@@ -800,23 +835,22 @@ for F in $FILES; do
       echo $A_FILTER_ARGS
       echo $FRAMERATE_ARGS
       echo $V_ENCODE_ARGS
-      # echo $PIX_FMT_ARGS
       echo $A_ENCODE_ARGS
       echo $OUTPUT
-      echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
+      # echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
 
-
-      ffmpeg \
-        -y -loglevel $LOG -stats \
-        $HW_DECODE_ARGS \
-        -i "$F" \
-        $V_FILTER_ARGS \
-        $A_FILTER_ARGS \
-        $FRAMERATE_ARGS \
-        $V_ENCODE_ARGS \
-        $A_ENCODE_ARGS \
-        "$OUTPUT"
-      # fi
+      #
+      # ffmpeg \
+      #   -y -loglevel $LOG -stats \
+      #   $HW_DECODE_ARGS \
+      #   -i "$F" \
+      #   $V_FILTER_ARGS \
+      #   $V_ENCODE_ARGS \
+      #   $FRAMERATE_ARGS \
+      #   $A_FILTER_ARGS \
+      #   $A_ENCODE_ARGS \
+      #   "$OUTPUT"
+          ffmpeg $HW_DECODE_ARGS -i "$F" $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS "$OUTPUT"
     else;
         echo "Processed file found"
     fi
