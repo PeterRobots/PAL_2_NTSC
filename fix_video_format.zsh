@@ -407,20 +407,7 @@ get_device() {
 
 get_video_encoder_preset_quality() {
   local PRESET_QUALITIES=$1
-  # echo "${(P)PRESET_QUALITIES[1]}"
   get_preset_values PRESET_QUALITIES V_PRESET_ARG
-  # Low to High order
-  # case "$PRESET" in
-  #   l|low)
-  #     V_PRESET_ARG=${(P)PRESET_QUALITIES[1]}
-  #   ;;
-  #   m|medium)
-  #     V_PRESET_ARG=${(P)PRESET_QUALITIES[2]}
-  #   ;;
-  #   h|high)
-  #     V_PRESET_ARG=${(P)PRESET_QUALITIES[3]}
-  #   ;;
-  # esac
 }
 
 get_device_args() {
@@ -433,26 +420,26 @@ get_device_args() {
       case "$V_CODEC" in
           h266|vvc)
             QUALITY=$((QUALITY+3))
-            get_video_encoder_preset_quality CPU_PRESETS
+            get_preset_values CPU_PRESETS V_PRESET_ARG
             V_ENCODE_ARGS+=(libvvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
           ;;
           h265|hevc)
             QUALITY=$((QUALITY+2))
-            get_video_encoder_preset_quality CPU_PRESETS
+            get_preset_values CPU_PRESETS V_PRESET_ARG
             V_ENCODE_ARGS+=(libx265 -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
           ;;
           h264|avc)
-            get_video_encoder_preset_quality CPU_PRESETS
+            get_preset_values CPU_PRESETS V_PRESET_ARG
             V_ENCODE_ARGS+=(libx264 -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
           ;;
           vp9)
             CPU_PRESETS=(2 1 0)
-            get_video_encoder_preset_quality CPU_PRESETS
+            get_preset_values CPU_PRESETS V_PRESET_ARG
             V_ENCODE_ARGS+=(libvpx-vp9 -cpu-used $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1)
           ;;
           av1)
             CPU_PRESETS=(8 6 4)
-            get_video_encoder_preset_quality CPU_PRESETS
+            get_preset_values CPU_PRESETS V_PRESET_ARG
             QUALITY=$((QUALITY+2))
             V_ENCODE_ARGS+=(libsvtav1 -preset $V_PRESET_ARG -svtav1-params tune=0 $PIX_FMT_ARGS -crf $QUALITY)
           ;;
@@ -479,18 +466,18 @@ get_device_args() {
             GPU_PRESETS=("p4" "p6" "p7")
             case "$V_CODEC" in
               h265|hevc)
-                get_video_encoder_preset_quality GPU_PRESETS
+                get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY+1))
                 V_ENCODE_ARGS+=(hevc_nvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -cq $QUALITY)
               ;;
               h264|avc)
-                # get_video_encoder_preset_quality GPU_PRESETS
+                # get_preset_values GPU_PRESETS V_PRESET_ARG
                 get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY-1))
                 V_ENCODE_ARGS+=(h264_nvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -cq $QUALITY)
               ;;
               av1)
-                get_video_encoder_preset_quality GPU_PRESETS
+                get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY+1))
                 V_ENCODE_ARGS+=(av1_nvenc -preset $V_PRESET_ARG $PIX_FMT_ARGS -cq $QUALITY)
               ;;
@@ -512,17 +499,17 @@ get_device_args() {
           GPU_PRESETS=("balanced" "quality" "high_quality")
           case "$V_CODEC" in
             h265|hevc)
-              get_video_encoder_preset_quality GPU_PRESETS
+              get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
               # Alternative to -qp: -rc cqp -qp_i $QUALITY -qp_p $QUALITY -qp_b $QUALITY
               V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
             ;;
             h264|avc)
-              get_video_encoder_preset_quality GPU_PRESETS
+              get_preset_values GPU_PRESETS V_PRESET_ARG
               V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
             ;;
             av1)
-              get_video_encoder_preset_quality GPU_PRESETS
+              get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
               V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG $PIX_FMT_ARGS -qp $QUALITY)
             ;;
@@ -540,16 +527,16 @@ get_device_args() {
           GPU_PRESETS=("5" "3" "1")
           case "$V_CODEC" in
             h265|hevc)
-              get_video_encoder_preset_quality GPU_PRESETS
+              get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
               V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
             ;;
             h264|avc)
-              get_video_encoder_preset_quality GPU_PRESETS
+              get_preset_values GPU_PRESETS V_PRESET_ARG
               V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG $PIX_FMT_ARGS -crf $QUALITY)
             ;;
             av1)
-              get_video_encoder_preset_quality GPU_PRESETS
+              get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
               V_ENCODE_ARGS+=(av1_qsv -preset $V_PRESET_ARG $PIX_FMT_ARGS -global_quality $QUALITY -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1)
             ;;
@@ -585,7 +572,7 @@ get_device_args() {
     exit 2
     ;;
   esac
-  VIDEO_CODEC_ARGS+=(-bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
+  V_CODEC_ARGS+=(-bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
 }
 
 # -vf "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
@@ -762,7 +749,7 @@ for F in $FILES; do
   # echo "Audio filter: $AUDIO_FILTER"
   if [[ ! -z "$VIDEO_FILTER" ]]; then
     V_FILTER_ARGS=(-vf \"$VIDEO_FILTER\")
-    FRAMERATE_ARGS=(-r:v $CORRECT_FPS -vsync cfr)
+    FRAMERATE_ARGS=(-r $CORRECT_FPS -fps_mode cfr)
   else
     V_FILTER_ARGS=()
     FRAMERATE_ARGS=(-fps_mode passthrough)
@@ -816,6 +803,8 @@ for F in $FILES; do
       # echo $PIX_FMT_ARGS
       echo $A_ENCODE_ARGS
       echo $OUTPUT
+      echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
+
 
       ffmpeg \
         -y -loglevel $LOG -stats \
