@@ -6,7 +6,10 @@ LOG="fatal"
 PRESET="medium"
 V_CODEC="h264"
 A_CODEC="ac3"
-LANGUAGE="keep"
+A_LANGUAGE="keep"
+S_LANGUAGE="keep"
+A_LANGUAGE_ONLY=false
+S_LANGUAGE_ONLY=false
 PIX_FMT="keep"
 FIX_TYPE="p2nf"
 A_BIT_RATE_METHOD="vbr"
@@ -38,43 +41,39 @@ while [[ $# -gt 0 ]]; do
     -i)
       INPUT="$2"
       shift 2 # Past argument only
-      ;;
+    ;;
     -o)
       OUTPUT="$2"
       shift 2
-      ;;
+    ;;
     -p|--preset)
       PRESET="$2"
       shift 2
-      ;;
+    ;;
     -cv|--video-codec)
       V_CODEC="$2"
       shift 2
-      ;;
+    ;;
     -ca|--audio-codec)
       A_CODEC="$2"
       shift 2
-      ;;
+    ;;
     -d|--device)
       DEVICE="$2"
       shift 2
-      ;;
-    -s|--subtitle-lang)
-      LANGUAGE="$2"
-      shift 2
-      ;;
+    ;;
     -t|--fix-type)
       FIX_TYPE="$2"
       shift 2
-      ;;
+    ;;
     -bp|--bit-pixel-format)
       PIX_FMT="$2"
       shift 2
-      ;;
+    ;;
     -abm|--audio-bitrate-method)
       A_BIT_RATE_METHOD="$2"
       shift 2
-      ;;
+    ;;
     -v|--log-level)
       if (((quiet panic fatal error warning info verbose debug trace)[(e)$2])); then
         LOG="$2"
@@ -83,15 +82,31 @@ while [[ $# -gt 0 ]]; do
         LOG="verbose"
         shift 1
       fi
-      ;;
-      --deinterlace)
-        DEINTERLACE=false
-        shift 1
-      ;;
-      -f|--force)
-        FORCE=true
-        shift 1
-      ;;
+    ;;
+    -sl|--subtitle-language)
+      S_LANGUAGE="$2"
+      shift 2
+    ;;
+    --subtitle-language-only)
+      S_LANGUAGE_ONLY=true
+      shift 1
+    ;;
+    -al|--audio-language)
+      A_LANGUAGE="$2"
+      shift 2
+    ;;
+    --audio-language-only)
+      A_LANGUAGE_ONLY=true
+      shift 1
+    ;;
+    --deinterlace)
+      DEINTERLACE=false
+      shift 1
+    ;;
+    -f|--force)
+      FORCE=true
+      shift 1
+    ;;
     --help)
       echo "Usage: $0 [options]"
       echo "  -i                    Set input and container type"
@@ -104,14 +119,17 @@ while [[ $# -gt 0 ]]; do
       echo "  -v, --log-level       Set/Flag the log level: quiet, panic, fatal, error, warning, info, verbose, debug, trace  (default: fatal)"
       echo "  -bp, --bit-pixel-format  Set bit pixel format: 8, 10, keep  (default: keep)"
       echo "  -abm, --audio-bitrate-method  Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
-      echo "  -s, --subtitle-lang   Set subtitle language filter: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
+      echo "  -sl, --subtitle-language  Set preferred subtitle language: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
+      echo "  -al, --audio-language Set preferred audio language: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
+      echo "  --audio-language-only    Flag to keep only preferred audio language stream"
+      echo "  --subtitle-language-only Flag to keep only preferred subtitle language stream"
       echo "  --no-deinterlace      Flag no deinterlace"
       exit 0
-      ;;
+    ;;
     *)
       echo "Unknown option: $1"
       exit 1
-      ;;
+    ;;
   esac
 done
 echo "Converting: "
@@ -176,7 +194,7 @@ case "$PRESET" in
     ;;
     k|keep)
     QUALITY=-1
-    # This will be mkvtoolnix method
+    # This will be raw bitstream method
     ;;
     *)
     echo "Unknown preset: $PRESET"
@@ -757,18 +775,45 @@ for F in $FILES; do
   FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
   INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
   # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
-  if [[ $DEINTERLACE ]] && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
+  if $DEINTERLACE && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
     VIDEO_FILTER_ARR=($DEINTERLACE_FILTER)
   else
     VIDEO_FILTER_ARR=()
   fi
   VIDEO_FILTER_ARR+=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
   # VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
-  if [[ $LANGUAGE != "keep" ]]; then
-    LANG_FILTER="a:m:language:$LANGUAGE"
+
+  # MAP ARGS
+  # Video
+  MAP_ARGS=(-map 0:v)
+  DISPOSITION_ARGS=()
+  # Audio
+  if [[ $A_LANGUAGE != "keep" ]]; then
+    if $A_LANGUAGE_ONLY; then
+      MAP_ARGS+=(-map a:m:language:$A_LANGUAGE)
+    else
+      MAP_ARGS+=(-map 0:a)
+      DISPOSITION_ARGS+=(-disposition:a:m:language:$A_LANGUAGE default -disposition:a:0 0)
+    fi
   else
-    LANG_FILTER="a"
+    MAP_ARGS+=(-map 0:a)
   fi
+  # Subtitles
+  if [[ $S_LANGUAGE != "keep" ]]; then
+    if $S_LANGUAGE_ONLY; then
+      MAP_ARGS+=(-map s:m:language:$S_LANGUAGE)
+      S_ENCODE_ARGS=(-c:s copy)
+    else
+      MAP_ARGS+=(-map 0:s)
+      DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
+      S_ENCODE_ARGS=(-c:s copy)
+    fi
+  else
+    MAP_ARGS+=(-map 0:s)
+    S_ENCODE_ARGS=(-c:s copy)
+  fi
+
+
 
   # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
   AUDIO_FILTER_ARR=("asetrate=$FPS_CORRECTION*$F_A_SAMPLERATE" "aresample=resampler=soxr:osr=$F_A_SAMPLERATE")
@@ -783,14 +828,14 @@ for F in $FILES; do
   # AUDIO_FILTER="${AUDIO_FILTER}[aout]"
   # echo "Audio filter: $AUDIO_FILTER"
   if [[ ! -z "$VIDEO_FILTER" ]]; then
-    V_FILTER_ARGS=(-vf ${(qq)VIDEO_FILTER})
+    V_FILTER_ARGS=(-vf ${(qqq)VIDEO_FILTER})
     FRAMERATE_ARGS=(-r $CORRECT_FPS -fps_mode cfr)
   else
     V_FILTER_ARGS=()
     FRAMERATE_ARGS=(-fps_mode passthrough)
   fi
   if [[ ! -z "$AUDIO_FILTER" ]]; then
-    A_FILTER_ARGS=(-filter:$LANG_FILTER ${(qq)AUDIO_FILTER})
+    A_FILTER_ARGS=(-af ${(qqq)AUDIO_FILTER})
   else
     A_FILTER_ARGS=()
   fi
@@ -825,47 +870,50 @@ for F in $FILES; do
 #         Want to use aac codec -b:a 320k, but ac3 has better surround support. (phone also won't play aac)
 #         Example of raw input to cuda for nvidia accelerated split filter
 #         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
-    if [[ ! -e $OUTPUT || $FORCE ]]; then
+    if [[ ! -e $OUTPUT ]] || $FORCE; then
       # if [[ $PRESET=="keep" && $V_CODEC-="keep" && $A_CODEC=="keep" && $LANGUAGE=="keep" && $PIX_FMT=="keep" && $FIX_TYPE=="p2nf" && ! $DEINTERLACE ]]
 
       echo "-y -loglevel $LOG -stats"
       echo $HW_DECODE_ARGS
       echo "-i $F"
+      echo $MAP_ARGS
       echo $V_FILTER_ARGS
-      echo $A_FILTER_ARGS
-      echo $FRAMERATE_ARGS
       echo $V_ENCODE_ARGS
+      echo $FRAMERATE_ARGS
+      echo $A_FILTER_ARGS
       echo $A_ENCODE_ARGS
+      echo $S_ENCODE_ARGS
+      echo $DISPOSITION_ARGS
       echo $OUTPUT
       # echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
 
-      #
       # ffmpeg \
       #   -y -loglevel $LOG -stats \
       #   $HW_DECODE_ARGS \
       #   -i "$F" \
+      #   $MAP_ARGS \
       #   $V_FILTER_ARGS \
       #   $V_ENCODE_ARGS \
       #   $FRAMERATE_ARGS \
       #   $A_FILTER_ARGS \
       #   $A_ENCODE_ARGS \
       #   "$OUTPUT"
-          ffmpeg $HW_DECODE_ARGS -i "$F" $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS "$OUTPUT"
+      ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i "$F" $MAP_ARGS $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS $S_ENCODE_ARGS $DISPOSITION_ARGS "$OUTPUT"
+
+      # Lossless video and subtitle timestamp changes with audio resampling
+      # ffmpeg \
+      # -itsscale 1.0427083333333333 \ # Has to be a float
+      # -i /home/pinzani/Videos/DS9_S4_D2-B1_t01.mkv \
+      # -map 0:s -c:s copy \
+      # -map 0:v -c:v copy \
+      # -map 0:a -filter:a "atempo=24000/25025" -c:a ac3 \ # No pitch shift
+      # -map 0:a -filter:a "atempo=24000/25025,asetrate=24000/25025*48000,atempo=25025/24000,aresample=resampler=soxr:osr=48000" -c:a ac3 \ # Pitch shift
+      # -r 24000/1001 \
+      # /home/pinzani/Videos/test_lossless.mkv
     else;
         echo "Processed file found"
     fi
-    # if [ ! -e $OUTPUT/$FN_LIB_RESAMPLED ]; then$OUTPUT/$FN_NVENC_RESAMPLED
-    #     ffmpeg \
-    #         -y -loglevel error -stats -i $F \
-    #         -filter_complex \
-    #         " \
-    #             [0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif[vout];
-    #             [0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" \
-    #         -map "[vout]" -map "[aout]" -r:v $rate -vsync cfr -c:v libx265 -preset medium -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -crf 17 -c:a ac3 -b:a 640k $OUTPUT/$FN_LIB_RESAMPLED
-    # fi
 
- # -preset lossless
- # -preset p7 -bf 1 and -b_ref_mode middle -spatial-aq 1 -temporal-aq 1
     # echo "extracting chapters"
     # mkvextract "$F" chapters "$OUTPUT/$FN_CHAPTERS"
     # echo "Merging chapters with resampled"
