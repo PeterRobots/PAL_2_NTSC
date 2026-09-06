@@ -11,7 +11,7 @@ A_LANGUAGE_ONLY=false
 S_LANGUAGE="keep"
 S_LANGUAGE_ONLY=false
 PIX_FMT="keep"
-FIX_TYPE="p2nf"
+OUTPUT_FORMAT_STANDARD="keep"
 A_BIT_RATE_METHOD="vbr"
 DEINTERLACE=true
 FORCE=false
@@ -63,8 +63,8 @@ while [[ $# -gt 0 ]]; do
       DEVICE="$2"
       shift 2
     ;;
-    -t|--fix-type)
-      FIX_TYPE="$2"
+    -ofs|--output-format-standard)
+      OUTPUT_FORMAT_STANDARD="$2"
       shift 2
     ;;
     -bp|--bit-pixel-format)
@@ -76,13 +76,13 @@ while [[ $# -gt 0 ]]; do
       shift 2
     ;;
     -v|--log-level)
-      if (((quiet panic fatal error warning info verbose debug trace)[(e)$2])); then
-        LOG="$2"
-        shift 2
-      else
+      # if [[ (quiet panic fatal error warning info verbose debug trace)[(e)$2] ]]; then
+      #   LOG="$2"
+      #   shift 2
+      # else
         LOG="verbose"
         shift 1
-      fi
+      # fi
     ;;
     -sl|--subtitle-language)
       S_LANGUAGE="$2"
@@ -117,7 +117,7 @@ while [[ $# -gt 0 ]]; do
       echo "  -i                    Set input and container type"
       echo "  -o,                   Set output file, path and container (default </Processed/<input_file>)"
       echo "  -p, --preset          Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed, k|keep  (default: medium)"
-      echo "  -t, --fix-type        Set the fix type: none, pal2ntsc|p2n, pal2ntscfilm|p2nf, pal2pal|p2p, ntsc2pal|n2p, ntsc2ntscfilm|n2nf, ntsc2ntsc|n2n, ntscfilm2pal|nf2p, ntscfilm2ntscfilm|nf2nf, ntscfilm2ntsc|nf2n  (default:pal2ntscfilm)"
+      echo "  -ofs, --output-format-standard   Set the output format standard: keep, pal, ntsc_film, ntsc  (default: keep)"
       echo "  -cv, --video-codec    Set video codec: keep (maintain input codec), h266|vvc, h265|hevc, h264|avc, vp9, av1, ffv1|lossless (default: h264)"
       echo "  -ca, --audio-codec    Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac ; Legacy: mp3 (default: ac3)"
       echo "  -d, --device          Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, mac) (default: auto)"
@@ -231,46 +231,26 @@ get_preset_values() {
 }
 
 
-get_fix_filters() {
-  case "$FIX_TYPE" in
-      pal2ntsc|p2n)
+get_output_format_standard() {
+  case "$OUTPUT_FORMAT_STANDARD" in
+      ntsc)
         CORRECT_FPS_FILTER="fps=fps=ntsc"
         CORRECT_FPS=$NTSC_FRAMERATE
       ;;
-      pal2ntscfilm|p2nf)
+      ntsc_film)
         CORRECT_FPS_FILTER="fps=fps=ntsc_film"
         CORRECT_FPS=$NTSC_FILM_FRAMERATE
       ;;
-      pal2pal|p2p)
-        CORRECT_FPS_FILTER="fps=fps=source_fps"
-        CORRECT_FPS=$PAL_FRAMERATE
-      ;;
-      ntsc2pal|n2p)
+      pal)
         CORRECT_FPS_FILTER="fps=fps=pal"
         CORRECT_FPS=$PAL_FRAMERATE
       ;;
-      ntsc2ntscfilm|n2nf)
-        CORRECT_FPS_FILTER="fps=fps=ntsc_film"
-        CORRECT_FPS=$NTSC_FILM_FRAMERATE
-      ;;
-      ntsc2ntsc|n2n)
+      keep)
         CORRECT_FPS_FILTER="fps=fps=source_fps"
-        CORRECT_FPS=$NTSC_FRAMERATE
-      ;;
-      ntscfilm2ntscfilm|nf2nf)
-        CORRECT_FPS_FILTER="fps=fps=source_fps"
-        CORRECT_FPS=$NTSC_FILM_FRAMERATE
-      ;;
-      ntscfilm2ntsc|nf2n)
-        CORRECT_FPS_FILTER="fps=fps=ntsc"
-        CORRECT_FPS=$NTSC_FRAMERATE
-      ;;
-      ntscfilm2pal|nf2p)
-        CORRECT_FPS_FILTER="fps=fps=pal"
-        CORRECT_FPS=$PAL_FRAMERATE
+        CORRECT_FPS=$F_V_FPS
       ;;
       *)
-      echo "Unknown fix-type $FIX_TYPE"
+      echo "Unknown fix-type $OUTPUT_FORMAT_STANDARD"
       exit 2
       ;;
   esac
@@ -353,7 +333,7 @@ get_a_encode_args() {
         get_preset_values VBR_QUALITY A_VBR_QUALITY
         A_CBR_METHOD+=($A_BIT_RATE)
         A_BITRATE_ARGS=$A_CBR_METHOD
-        A_ENCODE_ARGS+=(ac3 $A_BITRATE_ARGS)
+        A_ENCODE_ARGS+=(ac3 $A_BIT_RATE_ARGS)
       ;;
       eac3|dolbyplus)
         get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
@@ -402,15 +382,15 @@ get_a_encode_args() {
         A_ENCODE_ARGS+=(libmp3lame $A_BIT_RATE_ARGS)
       ;;
       *)
-      if (( ${AVAILABLE_A_CODECS[(Ie)$A_CODEC]} )); then
-        A_ENCODE_ARGS+=($A_CODEC -b:a ${BIT_RATE}k)
-      elif [[ "${NEED_FIXING:l}" == "false" ]]; then
-        # If it doesn't need fixing, copy the audio stream
-        A_ENCODE_ARGS+=(copy)
-      else
-        echo "Unknown Video codec: $A_CODEC"
-        exit 2
-      fi
+        if (( ${AVAILABLE_A_CODECS[(Ie)$A_CODEC]} )); then
+          A_ENCODE_ARGS+=($A_CODEC -b:a ${BIT_RATE}k)
+        elif [[ -z $AUDIO_FILTER ]]; then
+          # Not rencoding audio
+          A_ENCODE_ARGS+=(copy)
+        else
+          echo "Unknown Video codec: $A_CODEC"
+          exit 2
+        fi
       ;;
   esac
 }
@@ -463,13 +443,12 @@ select_on_device(){
   typeset -g "$OUTPUT"="$PRESET_VALUE"
 }
 
-get_device_args() {
+get_v_encode_args() {
   V_ENCODE_ARGS=(-c:v)
   case "$DEVICE" in
     cpu)
       CPU_PRESETS=("fast" "medium" "slow")
       HW_DECODE_ARGS=""
-      DEINTERLACE_FILTER="bwdif"
       case "$V_CODEC" in
           h266|vvc)
             QUALITY=$((QUALITY+3))
@@ -515,7 +494,6 @@ get_device_args() {
         nvidia)
             HW_DECODE_ARGS=(-hwaccel cuda -hwaccel_output_format cuda)
             # HW_INIT_FILTER=""
-            DEINTERLACE_FILTER="bwdif_cuda=mode=0"
             GPU_PRESETS=("p4" "p6" "p7")
             case "$V_CODEC" in
               h265|hevc)
@@ -546,8 +524,6 @@ get_device_args() {
           # -vf "hwmap=derive_device=vulkan,format=vulkan"
           HW_DECODE_ARGS=(-init_hw_device vulkan=vk:0 -init_hw_device amf=amf@vk:0 -hwaccel amf -hwaccel_output_format amf_surface)
           # HW_DECODE_ARGS=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan -filter_hw_device vk)
-          # Only deinterlace marked fields
-          DEINTERLACE_FILTER="hwmap=derive_device=vulkan,format=vulkan,bwdif_vulkan=mode=send_frame"
           # HW_INIT_FILTER="hwupload"
           GPU_PRESETS=("balanced" "quality" "high_quality")
           case "$V_CODEC" in
@@ -575,8 +551,6 @@ get_device_args() {
         intel)
           HW_DECODE_ARGS=(-init_hw_device qsv=hw:autodetect -hwaccel qsv -filter_hw_device hw -hwaccel_output_format qsv)
           # -qsv_device /dev/dri/renderD128
-          # 2 is advanced motion-adaptive, 1 is bob weaver
-          DEINTERLACE_FILTER="vpp_qsv=deinterlace=2"
           GPU_PRESETS=("5" "3" "1")
           case "$V_CODEC" in
             h265|hevc)
@@ -600,8 +574,7 @@ get_device_args() {
           esac
         ;;
         apple|mac)
-          HW_DECODE_ARGS=(-hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
-          DEINTERLACE_FILTER="bwdif"
+          HW_DECODE_ARGS=(-init_hw_device videotoolbox -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
           case "$V_CODEC" in
             h265|hevc)
               QUALITY=$((4*(QUALITY)))
@@ -662,6 +635,16 @@ for F in $FILES; do
   mkdir -p $LOG_DIR
 
   echo "Resampling audio and video"
+  STREAMS=("${(f)$(ffprobe -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $F)}")
+  echo "Streams found:" $STREAMS
+
+  if (( ${STREAMS[(Ie)audio]} )); then
+    echo "Audio found"
+  fi
+
+  if (( ${STREAMS[(Ie)video]} )); then
+    echo "Video found"
+  fi
 
   # PRESET_COMMANDS=(-c:v hevc_nvenc -preset p7 -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -cq $QUALITY)
   # PRESET_COMMANDS=(-c:v libx265 -preset medium -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -crf $QUALITY)
@@ -688,7 +671,7 @@ for F in $FILES; do
   typeset -A V_FFPROBE_DICT
   while IFS== read -r key value; do
     V_FFPROBE_DICT[$key]=$value
-  done < <(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,field_order,r_frame_rate,pix_fmt -of default=noprint_wrappers=1 $F)
+  done < <(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,field_order,r_frame_rate,pix_fmt,bits_per_raw_sample -of default=noprint_wrappers=1 $F)
   # A_FFPROBE_ARR=("${(f)$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,bit_rate,sample_rate,channels -of default=noprint_wrappers=1 $F)}")
   # V_FFPROBE_ARR=("${(f)$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,field_order,r_frame_rate,pix_fmt -of default=noprint_wrappers=1 $F)}")
   # Example output of ffprobe
@@ -706,6 +689,7 @@ for F in $FILES; do
   F_V_WIDTH=$V_FFPROBE_DICT[width]
   F_V_HEIGHT=$V_FFPROBE_DICT[height]
   F_V_PIX_FMT=$V_FFPROBE_DICT[pix_fmt]
+  F_V_PIX_BITS=$V_FFPROBE_DICT[bits_per_raw_sample]
   # F_V_CODEC=$(sed -nE 's/.*codec_name=(\w+).*/\1/p' $V_FFPROBE_ARR)
   # F_V_FIELD_ORDER=$(sed -nE 's/.*field_order=(\w+).*/\1/p' $V_FFPROBE_ARR)
   # F_V_FPS=$(sed -nE 's/.*r_frame_rate=(\d+).*/\1/p' $V_FFPROBE_ARR)
@@ -718,22 +702,17 @@ for F in $FILES; do
   # F_A_BITRATE=$(sed -nE 's/.*bit_rate=(\d+).*/\1/p' $A_FFPROBE_ARR)
   # F_A_CHANNELS=$(sed -nE 's/.*channels=(\d+).*/\1/p' $A_FFPROBE_ARR)
 
-  if [[ $V_CODEC == 'keep' ]]; then
-    V_CODEC=$F_V_CODEC
+  if [[ $PIX_FMT == "keep" ]]; then
+    PIX_FMT=$F_V_PIX_BITS
   fi
-  if [[ $A_CODEC == 'keep' ]]; then
-    A_CODEC=$F_A_CODEC
-  fi
-
-  get_a_encode_args $F_A_CHANNELS
 
   case "$PIX_FMT" in
-      keep)
-        PIX_FMT_ARGS=(-pix_fmt $F_V_PIX_FMT)
-        # CPU CUDA AMF QSV VIDEOTOOLBOX
-        PIX_FMT_FILTERS=(format=$F_V_PIX_FMT scale_cuda=format=$F_V_PIX_FMT,hwdownload format=$F_V_PIX_FMT scale_qsv=format=$F_V_PIX_FMT hwdownload,format=$F_V_PIX_FMT)
-        select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
-      ;;
+      # keep)
+      #   PIX_FMT_ARGS=(-pix_fmt $F_V_PIX_FMT)
+      #   # CPU CUDA AMF QSV VIDEOTOOLBOX
+      #   PIX_FMT_FILTERS=(format=$F_V_PIX_FMT scale_cuda=format=$F_V_PIX_FMT format=$F_V_PIX_FMT scale_qsv=format=$F_V_PIX_FMT hwdownload,format=$F_V_PIX_FMT)
+      #   select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
+      # ;;
       8)
       case "$DEVICE" in
         cpu)
@@ -781,14 +760,30 @@ for F in $FILES; do
   # Filters
   VIDEO_FILTER_ARR=()
   AUDIO_FILTER_ARR=()
-  get_device_args
+  FRAMERATE_ARGS=()
+  # Add pixel filter last
+  VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
   # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
   if $DEINTERLACE && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
+    DEINTERLACE_FILTER_ARR=()
+    # CPU
+    DEINTERLACE_FILTER_ARR+="bwdif=mode=send_frame"
+    # NVIDIA CUDA
+    DEINTERLACE_FILTER_ARR+="bwdif_cuda=mode=0"
+    # AMD VULKAN
+    # Only deinterlace marked fields
+    DEINTERLACE_FILTER_ARR+="hwmap=derive_device=vulkan,format=vulkan,bwdif_vulkan=mode=send_frame"
+    # INTEL QSV
+    # 2 is advanced motion-adaptive, 1 is bob weaver
+    DEINTERLACE_FILTER_ARR+="vpp_qsv=deinterlace=2"
+    # APPLE (CPU)
+    DEINTERLACE_FILTER_ARR+="bwdif=mode=send_frame,hwupload=videotoolbox"
+    select_on_device DEINTERLACE_FILTER_ARR DEINTERLACE_FILTER
     VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
   fi
-
-  if [[ $FIX_TYPE != "none" ]]; then
-    get_fix_filters
+  # CORRECT_FPS and CORRECT_FPS_FILTER
+  get_output_format_standard
+  if [[ $OUTPUT_FORMAT_STANDARD != "keep" ]]; then
     FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
     INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
 
@@ -796,14 +791,15 @@ for F in $FILES; do
     # VIDEO_FILTER_ARR+=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
     VIDEO_FILTER_ARR+=($CORRECT_FPS_FILTER)
     # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
+    FRAMERATE_ARGS+=(-r $CORRECT_FPS)
+     # -fps_mode cfr
     if $PITCH_SHIFT; then
       AUDIO_FILTER_ARR+=("atempo=$FPS_CORRECTION" "asetrate=$FPS_CORRECTION*$F_A_SAMPLERATE" "atempo=$INVERSE_FPS_CORRECTION" "aresample=resampler=soxr:osr=$F_A_SAMPLERATE")
     else
       AUDIO_FILTER_ARR+=("atempo=$INVERSE_FPS_CORRECTION")
     fi
   fi
-  # Add pixel filter last
-  VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
+  FRAMERATE_ARGS+=(-fps_mode passthrough)
   # MAP ARGS
   # Video
   MAP_ARGS=(-map 0:v)
@@ -820,20 +816,22 @@ for F in $FILES; do
     MAP_ARGS+=(-map 0:a)
   fi
   # Subtitles
-  if [[ $S_LANGUAGE != "keep" ]]; then
-    if $S_LANGUAGE_ONLY; then
-      MAP_ARGS+=(-map s:m:language:$S_LANGUAGE)
-      S_ENCODE_ARGS=(-c:s copy)
+  if (( ${STREAMS[(Ie)subtitle]} )); then
+    echo "subtitle found"
+    if [[ $S_LANGUAGE != "keep" ]]; then
+      if $S_LANGUAGE_ONLY; then
+        MAP_ARGS+=(-map s:m:language:$S_LANGUAGE)
+        S_ENCODE_ARGS=(-c:s copy)
+      else
+        MAP_ARGS+=(-map 0:s)
+        DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
+        S_ENCODE_ARGS=(-c:s copy)
+      fi
     else
       MAP_ARGS+=(-map 0:s)
-      DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
       S_ENCODE_ARGS=(-c:s copy)
     fi
-  else
-    MAP_ARGS+=(-map 0:s)
-    S_ENCODE_ARGS=(-c:s copy)
   fi
-
   # , delimiter for sub arguments
   # echo "Video filter array: ${VIDEO_FILTER_ARR[@]}"
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
@@ -845,17 +843,25 @@ for F in $FILES; do
   # AUDIO_FILTER="${AUDIO_FILTER}[aout]"
   # echo "Audio filter: $AUDIO_FILTER"
   if [[ ! -z "$VIDEO_FILTER" ]]; then
-    V_FILTER_ARGS=(-vf ${(qqq)VIDEO_FILTER})
-    FRAMERATE_ARGS=(-r $CORRECT_FPS -fps_mode cfr)
+    V_FILTER_ARGS=(-vf "${VIDEO_FILTER}")
   else
     V_FILTER_ARGS=()
-    FRAMERATE_ARGS=(-fps_mode passthrough)
   fi
   if [[ ! -z "$AUDIO_FILTER" ]]; then
-    A_FILTER_ARGS=(-af ${(qqq)AUDIO_FILTER})
+    A_FILTER_ARGS=(-af "${AUDIO_FILTER}")
   else
     A_FILTER_ARGS=()
   fi
+
+  # ENCODING
+  if [[ $V_CODEC == 'keep' ]]; then
+    V_CODEC=$F_V_CODEC
+  fi
+  if [[ $A_CODEC == 'keep' ]]; then
+    A_CODEC=$F_A_CODEC
+  fi
+  get_a_encode_args $F_A_CHANNELS
+  get_v_encode_args
 
   # FILTER_ARR=()
   # ; delimiter for video + audio
@@ -889,19 +895,38 @@ for F in $FILES; do
 #         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
     if [[ ! -e $OUTPUT ]] || $FORCE; then
       # if [[ $PRESET=="keep" && $V_CODEC-="keep" && $A_CODEC=="keep" && $LANGUAGE=="keep" && $PIX_FMT=="keep" && $FIX_TYPE=="p2nf" && ! $DEINTERLACE ]]
-      echo "-y -loglevel $LOG -stats"
-      echo $HW_DECODE_ARGS
-      echo $ITSSCALE_ARGS
-      echo "-i $F"
-      echo $MAP_ARGS
-      echo $V_FILTER_ARGS
-      echo $V_ENCODE_ARGS
-      echo $A_FILTER_ARGS
-      echo $A_ENCODE_ARGS
-      echo $S_ENCODE_ARGS
-      echo $DISPOSITION_ARGS
-      echo $FRAMERATE_ARGS
-      echo $OUTPUT
+      # echo "-y -loglevel $LOG -stats"
+      # echo $HW_DECODE_ARGS
+      # echo $ITSSCALE_ARGS
+      # echo "-i $F"
+      # echo $MAP_ARGS
+      # echo $V_FILTER_ARGS
+      # echo $V_ENCODE_ARGS
+      # echo $A_FILTER_ARGS
+      # echo $A_ENCODE_ARGS
+      # echo $S_ENCODE_ARGS
+      # echo $DISPOSITION_ARGS
+      # echo $FRAMERATE_ARGS
+      # echo $OUTPUT
+
+      FFMPEG_ARGS=(-y -loglevel "$LOG" -stats)
+      FFMPEG_ARGS+=(${HW_DECODE_ARGS})
+      FFMPEG_ARGS+=(${ITSSCALE_ARGS})
+      FFMPEG_ARGS+=(-i "$F")
+      FFMPEG_ARGS+=(${MAP_ARGS})
+      FFMPEG_ARGS+=(${V_FILTER_ARGS})
+      FFMPEG_ARGS+=(${V_ENCODE_ARGS})
+      FFMPEG_ARGS+=(${A_FILTER_ARGS})
+      FFMPEG_ARGS+=(${A_ENCODE_ARGS})
+      FFMPEG_ARGS+=(${S_ENCODE_ARGS})
+      FFMPEG_ARGS+=(${DISPOSITION_ARGS})
+      FFMPEG_ARGS+=(${FRAMERATE_ARGS})
+      FFMPEG_ARGS+=("$OUTPUT")
+
+      echo "ffmpeg "$FFMPEG_ARGS
+
+      ffmpeg $FFMPEG_ARGS
+
       # echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
       # ffmpeg \
       # -itsscale $((FPS_CORRECTION)) \
@@ -909,21 +934,6 @@ for F in $FILES; do
       # -map 0:s \
       # -c:s copy \
       # $F_SUBTITLES
-
-      ffmpeg \
-        -y -loglevel $LOG -stats \
-        $HW_DECODE_ARGS \
-        $ITSSCALE_ARGS \
-        -i "$F" \
-        $MAP_ARGS \
-        $V_FILTER_ARGS \
-        $V_ENCODE_ARGS \
-        $A_FILTER_ARGS \
-        $A_ENCODE_ARGS \
-        $S_ENCODE_ARGS \
-        $DISPOSITION_ARGS \
-        $FRAMERATE_ARGS \
-        "$OUTPUT"
       # ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i "$F" $MAP_ARGS $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS $S_ENCODE_ARGS $DISPOSITION_ARGS "$OUTPUT"
 
       # Lossless video and subtitle timestamp changes with audio resampling

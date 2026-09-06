@@ -1,0 +1,3 @@
+#!/usr/bin/env zsh
+# ffmpeg -y -loglevel verbose -stats -init_hw_device videotoolbox -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i $1 -map 0:v -map 0:a -vf "hwdownload,format=nv12,bwdif=mode=send_frame,hwupload=videotoolbox" -c:v h264_videotoolbox -q:v 92 -c:a ac3 -b:a 224k -fps_mode passthrough $2
+ffmpeg -y -loglevel verbose -stats -init_hw_device videotoolbox -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -i $1 -map 0:v -map 0:a -vf "hwdownload,format=yuv420p,bwdif=mode=send_frame,hwupload=videotoolbox" -c:v h264_videotoolbox -q:v 92 -c:a ac3 -b:a 224k -fps_mode passthrough $2
