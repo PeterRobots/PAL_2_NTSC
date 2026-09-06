@@ -7,14 +7,15 @@ PRESET="medium"
 V_CODEC="h264"
 A_CODEC="ac3"
 A_LANGUAGE="keep"
-S_LANGUAGE="keep"
 A_LANGUAGE_ONLY=false
+S_LANGUAGE="keep"
 S_LANGUAGE_ONLY=false
 PIX_FMT="keep"
 FIX_TYPE="p2nf"
 A_BIT_RATE_METHOD="vbr"
 DEINTERLACE=true
 FORCE=false
+PITCH_SHIFT=true
 
 # Constants
 readonly SUPPORTED_GPUS=(nvidia amd intel apple)
@@ -87,7 +88,7 @@ while [[ $# -gt 0 ]]; do
       S_LANGUAGE="$2"
       shift 2
     ;;
-    --subtitle-language-only)
+    -slo|--subtitle-language-only)
       S_LANGUAGE_ONLY=true
       shift 1
     ;;
@@ -95,12 +96,16 @@ while [[ $# -gt 0 ]]; do
       A_LANGUAGE="$2"
       shift 2
     ;;
-    --audio-language-only)
+    -alo|--audio-language-only)
       A_LANGUAGE_ONLY=true
       shift 1
     ;;
-    --deinterlace)
+    -nd|--no-deinterlace)
       DEINTERLACE=false
+      shift 1
+    ;;
+    -nps|--no-pitch-shift)
+      PITCH_SHIFT=false
       shift 1
     ;;
     -f|--force)
@@ -112,7 +117,7 @@ while [[ $# -gt 0 ]]; do
       echo "  -i                    Set input and container type"
       echo "  -o,                   Set output file, path and container (default </Processed/<input_file>)"
       echo "  -p, --preset          Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed, k|keep  (default: medium)"
-      echo "  -t, --fix-type        Set the fix type: pal2ntsc|p2n, pal2ntscfilm|p2nf, pal2pal|p2p, ntsc2pal|n2p, ntsc2ntscfilm|n2nf, ntsc2ntsc|n2n, ntscfilm2pal|nf2p, ntscfilm2ntscfilm|nf2nf, ntscfilm2ntsc|nf2n  (default:pal2ntscfilm)"
+      echo "  -t, --fix-type        Set the fix type: none, pal2ntsc|p2n, pal2ntscfilm|p2nf, pal2pal|p2p, ntsc2pal|n2p, ntsc2ntscfilm|n2nf, ntsc2ntsc|n2n, ntscfilm2pal|nf2p, ntscfilm2ntscfilm|nf2nf, ntscfilm2ntsc|nf2n  (default:pal2ntscfilm)"
       echo "  -cv, --video-codec    Set video codec: keep (maintain input codec), h266|vvc, h265|hevc, h264|avc, vp9, av1, ffv1|lossless (default: h264)"
       echo "  -ca, --audio-codec    Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac ; Legacy: mp3 (default: ac3)"
       echo "  -d, --device          Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, mac) (default: auto)"
@@ -121,9 +126,10 @@ while [[ $# -gt 0 ]]; do
       echo "  -abm, --audio-bitrate-method  Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
       echo "  -sl, --subtitle-language  Set preferred subtitle language: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
       echo "  -al, --audio-language Set preferred audio language: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
-      echo "  --audio-language-only    Flag to keep only preferred audio language stream"
-      echo "  --subtitle-language-only Flag to keep only preferred subtitle language stream"
-      echo "  --no-deinterlace      Flag no deinterlace"
+      echo "  -alo, --audio-language-only    Flag to keep only preferred audio language stream"
+      echo "  -sbo, --subtitle-language-only Flag to keep only preferred subtitle language stream"
+      echo "  -nd, --no-deinterlace      Flag no deinterlace"
+      echo "  -nps, --no-pitch-shift Flag for preventing pitch shifting audio"
       exit 0
     ;;
     *)
@@ -731,8 +737,9 @@ for F in $FILES; do
       8)
       case "$DEVICE" in
         cpu)
-          PIX_FMT_ARGS=(-pix_fmt yuv420p)
-          PIX_FMT_FILTER=(format=yuv420p)
+          PIX_FMT="yuv420p"
+          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
+          PIX_FMT_FILTER=(format=$PIX_FMT)
         ;;
         gpu)
           PIX_FMT="nv12"
@@ -749,8 +756,9 @@ for F in $FILES; do
       10)
       case "$DEVICE" in
         cpu)
-          PIX_FMT_ARGS=(-pix_fmt yuv420p10le)
-          PIX_FMT_FILTER=(format=yuv420p10le)
+          PIX_FMT="yuv420p10le"
+          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
+          PIX_FMT_FILTER=(format=$PIX_FMT)
         ;;
         gpu)
           PIX_FMT="p010le"
@@ -770,20 +778,32 @@ for F in $FILES; do
       ;;
   esac
 
+  # Filters
+  VIDEO_FILTER_ARR=()
+  AUDIO_FILTER_ARR=()
   get_device_args
-  # FILTER
-  get_fix_filters
-  FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
-  INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
   # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
   if $DEINTERLACE && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
-    VIDEO_FILTER_ARR=($DEINTERLACE_FILTER)
-  else
-    VIDEO_FILTER_ARR=()
+    VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
   fi
-  VIDEO_FILTER_ARR+=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
-  # VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
 
+  if [[ $FIX_TYPE != "none" ]]; then
+    get_fix_filters
+    FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
+    INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
+
+    ITSSCALE_ARGS=(-itsscale $((INVERSE_FPS_CORRECTION)))
+    # VIDEO_FILTER_ARR+=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
+    VIDEO_FILTER_ARR+=($CORRECT_FPS_FILTER)
+    # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
+    if $PITCH_SHIFT; then
+      AUDIO_FILTER_ARR+=("atempo=$FPS_CORRECTION" "asetrate=$FPS_CORRECTION*$F_A_SAMPLERATE" "atempo=$INVERSE_FPS_CORRECTION" "aresample=resampler=soxr:osr=$F_A_SAMPLERATE")
+    else
+      AUDIO_FILTER_ARR+=("atempo=$INVERSE_FPS_CORRECTION")
+    fi
+  fi
+  # Add pixel filter last
+  VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
   # MAP ARGS
   # Video
   MAP_ARGS=(-map 0:v)
@@ -814,10 +834,6 @@ for F in $FILES; do
     S_ENCODE_ARGS=(-c:s copy)
   fi
 
-
-
-  # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
-  AUDIO_FILTER_ARR=("asetrate=$FPS_CORRECTION*$F_A_SAMPLERATE" "aresample=resampler=soxr:osr=$F_A_SAMPLERATE")
   # , delimiter for sub arguments
   # echo "Video filter array: ${VIDEO_FILTER_ARR[@]}"
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
@@ -873,7 +889,6 @@ for F in $FILES; do
 #         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
     if [[ ! -e $OUTPUT ]] || $FORCE; then
       # if [[ $PRESET=="keep" && $V_CODEC-="keep" && $A_CODEC=="keep" && $LANGUAGE=="keep" && $PIX_FMT=="keep" && $FIX_TYPE=="p2nf" && ! $DEINTERLACE ]]
-
       echo "-y -loglevel $LOG -stats"
       echo $HW_DECODE_ARGS
       echo $ITSSCALE_ARGS
@@ -888,12 +903,12 @@ for F in $FILES; do
       echo $FRAMERATE_ARGS
       echo $OUTPUT
       # echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
-      ffmpeg \
-      -itsscale $((FPS_CORRECTION)) \
-      -i "$F" \
-      -map 0:s \
-      -c:s copy \
-      $F_SUBTITLES
+      # ffmpeg \
+      # -itsscale $((FPS_CORRECTION)) \
+      # -i "$F" \
+      # -map 0:s \
+      # -c:s copy \
+      # $F_SUBTITLES
 
       ffmpeg \
         -y -loglevel $LOG -stats \
