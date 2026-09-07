@@ -36,6 +36,457 @@ readonly NTSC_FRAMERATE=30000/1001.0
 # Based on Dual layer Single Sided DVD-9 standard, max of a common DVD size 8.54GB (Bytes)
 readonly DVD_MAX_SIZE=8540000000
 readonly HD_COLOR_SPACE=("bt709" "bt2020")
+
+## FUNCTIONS
+get_preset_values() {
+  local PRESET_ARR="$1"
+  local OUTPUT=$2
+  local PRESET_VALUE
+  local local_arr=(${${(P)PRESET_ARR}[@]})
+  # echo "All elements: ${${(P)PRESET_ARR}[@]}"
+  # echo "1st element: ${${(P)PRESET_ARR}[1]}"
+  # echo "1st element: $local_arr[1]"
+  case "$PRESET" in
+    l|low)
+      PRESET_VALUE=$local_arr[1]
+    ;;
+    m|medium)
+      PRESET_VALUE=$local_arr[2]
+    ;;
+    h|high)
+      PRESET_VALUE=$local_arr[3]
+    ;;
+  esac
+  typeset -g "$OUTPUT"="$PRESET_VALUE"
+}
+
+
+get_output_format_standard() {
+  case "$OUTPUT_FORMAT_STANDARD" in
+      ntsc)
+        CORRECT_FPS_FILTER="fps=fps=ntsc"
+        CORRECT_FPS=$NTSC_FRAMERATE
+      ;;
+      ntsc_film)
+        CORRECT_FPS_FILTER="fps=fps=ntsc_film"
+        CORRECT_FPS=$NTSC_FILM_FRAMERATE
+      ;;
+      pal)
+        CORRECT_FPS_FILTER="fps=fps=pal"
+        CORRECT_FPS=$PAL_FRAMERATE
+      ;;
+      keep)
+        CORRECT_FPS_FILTER="fps=fps=source_fps"
+        CORRECT_FPS=$F_V_FPS
+      ;;
+      *)
+      echo "Unknown fix-type $OUTPUT_FORMAT_STANDARD"
+      exit 2
+      ;;
+  esac
+}
+
+
+get_a_bitrate() {
+  local NUM_CHANNELS=$2
+  local MAX_BIT_RATE=$3
+  local MIN_BIT_RATE=$4
+  local OUTPUT=$5
+  # Low to High order
+  get_preset_values $1 A_BIT_RATE_PER_CHANNEL
+  # echo "Bit rate: " $A_BIT_RATE_PER_CHANNEL
+  COUNT_CHANNELS=0
+  # echo "Number of channels: " $NUM_CHANNELS
+  for n in ${(s:.:)NUM_CHANNELS}; do
+    COUNT_CHANNELS=$((COUNT_CHANNELS + n))
+  done
+  BIT_RATE=$(( COUNT_CHANNELS * A_BIT_RATE_PER_CHANNEL ))
+  BIT_RATE=$(( BIT_RATE < MIN_BIT_RATE ? MIN_BIT_RATE : (BIT_RATE > MAX_BIT_RATE ? MAX_BIT_RATE : BIT_RATE) ))
+  # echo "Channel info: " $NUM_CHANNELS $COUNT_CHANNELS $A_BIT_RATE_PER_CHANNEL $BIT_RATE
+  typeset -g "$OUTPUT"=""$BIT_RATE"k"
+}
+
+
+get_a_bitrate_method() {
+  local A_VBR_ARGS=$1
+  local A_CBR_ARGS=$2
+  local OUTPUT=$2
+  case "$A_BIT_RATE_METHOD" in
+    vbr|variable)
+        A_BITRATE_ARGS=$A_VBR_ARGS
+      ;;
+    cbr|constant)
+        A_BITRATE_ARGS=$A_CBR_ARGS
+      ;;
+    *)
+      echo "Unknown Audio bitrate method: $A_BIT_RATE_METHOD"
+      ;;
+  esac
+  typeset -g "$OUTPUT"=$A_BITRATE_ARGS
+}
+
+
+get_a_encode_args() {
+  local NUM_CHANNELS=$1
+  local MAX_BIT_RATE=1024
+  local MIN_BIT_RATE=64
+  A_ENCODE_ARGS=(-c:a)
+  A_BIT_RATE="64k"
+  A_BIT_RATE_PER_CHANNEL=64
+  A_CBR_METHOD=(-b:a)
+  A_VBR_METHOD=(-q:a)
+  A_BIT_RATES_PER_CHANNEL_ARR=("64" "112" "160")
+  A_VBR_QUALITIES=("0" "4" "9")
+  case "$A_CODEC" in
+      aac)
+        if (( ${AVAILABLE_A_CODECS[(Ie)libfdk_aac]} )); then
+          # libfdk_aac is proprietary but a lot better, if available use it.
+          A_VBR_QUALITIES=(2 4 5)
+          A_BIT_RATES_PER_CHANNEL_ARR=("40" "72" "112")
+          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
+          get_preset_values VBR_QUALITY A_VBR_QUALITY
+          A_CBR_METHOD=(-vbr 0 -b:a $A_BIT_RATE)
+          A_VBR_METHOD=(-vbr $A_VBR_QUALITY)
+          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+          A_ENCODE_ARGS+=(libfdk_aac $A_BIT_RATE_ARGS)
+        else
+          A_VBR_QUALITIES=("0.5" "1.4" "2.0")
+          A_BIT_RATES_PER_CHANNEL_ARR=("80" "112" "160")
+          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
+          get_preset_values VBR_QUALITY A_VBR_QUALITY
+          A_CBR_METHOD+=($A_BIT_RATE)
+          A_VBR_METHOD+=($A_VBR_QUALITY)
+          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+          A_ENCODE_ARGS+=(aac $A_BIT_RATE_ARGS)
+        fi
+      ;;
+      ac3|dolby)
+        MAX_BIT_RATE=640
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_CBR_METHOD+=($A_BIT_RATE)
+        A_BITRATE_ARGS=$A_CBR_METHOD
+        A_ENCODE_ARGS+=(ac3 $A_BIT_RATE_ARGS)
+      ;;
+      eac3|dolbyplus)
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_CBR_METHOD+=($A_BIT_RATE)
+        A_BITRATE_ARGS=$A_CBR_METHOD
+        A_ENCODE_ARGS+=(eac3 $A_BIT_RATE_ARGS)
+      ;;
+      opus)
+        A_VBR_QUALITIES=("64" "96" "128")
+        A_BIT_RATES_PER_CHANNEL_ARR=("64" "96" "128")
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
+        get_a_bitrate A_VBR_QUALITIES $NUM_CHANNELS VBR_QUALITY
+        A_CBR_METHOD+=($A_BIT_RATE)
+        A_VBR_METHOD=${A_CBR_METHOD}
+        A_CBR_METHOD=(-vbr off)+$A_CBR_METHOD
+        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+        A_ENCODE_ARGS+=(libopus $A_BIT_RATE_ARGS)
+      ;;
+      vorbis)
+        A_VBR_QUALITIES=("3.0" "5.0" "9.0")
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_VBR_METHOD+=($A_VBR_QUALITY)
+        A_BIT_RATE_ARGS=$A_VBR_METHOD
+        A_ENCODE_ARGS+=(libvorbis $A_BIT_RATE_ARGS)
+      ;;
+      lpcm|pcm|none)
+        A_ENCODE_ARGS+=(pcm_s16le)
+      ;;
+      flac)
+        A_ENCODE_ARGS+=(flac)
+      ;;
+      alac)
+        A_ENCODE_ARGS+=(alac)
+      ;;
+      copy)
+        A_ENCODE_ARGS+=(copy)
+      ;;
+      mp3)
+        A_VBR_QUALITIES=("7" "3" "0")
+        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
+        get_preset_values VBR_QUALITY A_VBR_QUALITY
+        A_CBR_METHOD+=($A_BIT_RATE)
+        A_VBR_METHOD+=($A_VBR_QUALITY)
+        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
+        A_ENCODE_ARGS+=(libmp3lame $A_BIT_RATE_ARGS)
+      ;;
+      *)
+        if (( ${AVAILABLE_A_CODECS[(Ie)$A_CODEC]} )); then
+          A_ENCODE_ARGS+=($A_CODEC -b:a ${BIT_RATE}k)
+        elif [[ -z $AUDIO_FILTER ]]; then
+          # Not rencoding audio
+          A_ENCODE_ARGS+=(copy)
+        else
+          echo "Unknown Video codec: $A_CODEC"
+          exit 2
+        fi
+      ;;
+  esac
+}
+
+
+get_device() {
+  for S_GPU in $SUPPORTED_GPUS; do
+    if [[ ${GPU:l} == *"$S_GPU"* ]]; then
+      GPU="$S_GPU"
+      DEVICE="gpu"
+      break
+    fi
+  done
+  # If no match to gpu use cpu
+  if [[ ${DEVICE:l} == "auto" ]]; then
+    DEVICE="cpu"
+  fi
+}
+
+
+select_on_device(){
+  local PRESET_ARR="$1"
+  local OUTPUT=$2
+  local PRESET_VALUE
+  local local_arr=(${${(P)PRESET_ARR}[@]})
+
+  case "$DEVICE" in
+    cpu)
+      PRESET_VALUE=$local_arr[1]
+    ;;
+    gpu)
+      case "$GPU" in
+        nvidia)
+          PRESET_VALUE=$local_arr[2]
+        ;;
+        amd)
+          PRESET_VALUE=$local_arr[3]
+        ;;
+        intel)
+          PRESET_VALUE=$local_arr[4]
+        ;;
+        apple|mac)
+          PRESET_VALUE=$local_arr[5]
+        ;;
+      esac
+    ;;
+    *)
+    echo "Unknown device: $DEVICE"
+    exit 2
+    ;;
+  esac
+  typeset -g "$OUTPUT"="$PRESET_VALUE"
+}
+
+
+get_v_encode_args() {
+  V_ENCODE_ARGS=(-c:v)
+  case "$DEVICE" in
+    cpu)
+      CPU_PRESETS=("fast" "medium" "slow")
+      HW_DECODE_ARGS=""
+      case "$V_CODEC" in
+          h266|vvc)
+            QUALITY=$((QUALITY+3))
+            get_preset_values CPU_PRESETS V_PRESET_ARG
+            V_ENCODE_ARGS+=(libvvenc -preset $V_PRESET_ARG -qp $QUALITY)
+          ;;
+          h265|hevc)
+            QUALITY=$((QUALITY+2))
+            get_preset_values CPU_PRESETS V_PRESET_ARG
+            V_ENCODE_ARGS+=(libx265 -preset $V_PRESET_ARG -crf $QUALITY)
+          ;;
+          h264|avc)
+            get_preset_values CPU_PRESETS V_PRESET_ARG
+            V_ENCODE_ARGS+=(libx264 -preset $V_PRESET_ARG -crf $QUALITY)
+          ;;
+          vp9)
+            CPU_PRESETS=(2 1 0)
+            get_preset_values CPU_PRESETS V_PRESET_ARG
+            V_ENCODE_ARGS+=(libvpx-vp9 -cpu-used $V_PRESET_ARG -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1)
+          ;;
+          av1)
+            CPU_PRESETS=(8 6 4)
+            get_preset_values CPU_PRESETS V_PRESET_ARG
+            QUALITY=$((QUALITY+2))
+            V_ENCODE_ARGS+=(libsvtav1 -preset $V_PRESET_ARG -svtav1-params tune=0 -crf $QUALITY)
+          ;;
+          ffv1|lossless)
+            # level 3 is version 3, the currently best version
+            V_ENCODE_ARGS+=(ffv1 -level 3)
+          ;;
+          mpeg2video)
+          # qscale is from 2-31, 2 is highest quality
+            V_ENCODE_ARGS+=(mpeg2video -qscale:v $(QUALITY-16))
+          ;;
+          *)
+          echo "Unknown Video codec: $V_CODEC"
+          exit 2
+          ;;
+      esac
+    ;;
+    gpu)
+      case "$GPU" in
+        nvidia)
+            HW_DECODE_ARGS=(-hwaccel cuda -hwaccel_output_format cuda)
+            # HW_INIT_FILTER=""
+            GPU_PRESETS=("p4" "p6" "p7")
+            CRF_ARGS=(-tune hq -rc vbr -cq $QUALITY -b:v $AVG_BIT_RATE -maxrate:v $MAX_BIT_RATE -bufsize:v $BUF_BIT_RATE)
+            case "$V_CODEC" in
+              h265|hevc)
+                get_preset_values GPU_PRESETS V_PRESET_ARG
+                QUALITY=$((QUALITY+1))
+                V_ENCODE_ARGS+=(hevc_nvenc -preset $V_PRESET_ARG $CRF_ARGS)
+              ;;
+              h264|avc)
+                # get_preset_values GPU_PRESETS V_PRESET_ARG
+                get_preset_values GPU_PRESETS V_PRESET_ARG
+                QUALITY=$((QUALITY-1))
+                V_ENCODE_ARGS+=(h264_nvenc -preset $V_PRESET_ARG -cq $CRF_ARGS)
+              ;;
+              av1)
+                get_preset_values GPU_PRESETS V_PRESET_ARG
+                QUALITY=$((QUALITY+1))
+                V_ENCODE_ARGS+=(av1_nvenc -preset $V_PRESET_ARG -cq $CRF_ARGS)
+              ;;
+              *)
+                echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
+                exit 2
+              ;;
+            esac
+        ;;
+        amd)
+          # ffmpeg -init_hw_device vulkan=vk:0 -init_hw_device amf=amf@vk:0 \
+          # -hwaccel amf -hwaccel_output_format amf_surface \
+          # -vf "hwmap=derive_device=vulkan,format=vulkan"
+          HW_DECODE_ARGS=(-init_hw_device vulkan=vk:0 -init_hw_device amf=amf@vk:0 -hwaccel amf -hwaccel_output_format amf_surface)
+          # HW_DECODE_ARGS=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan -filter_hw_device vk)
+          # HW_INIT_FILTER="hwupload"
+          GPU_PRESETS=("balanced" "quality" "high_quality")
+          case "$V_CODEC" in
+            h265|hevc)
+              get_preset_values GPU_PRESETS V_PRESET_ARG
+              QUALITY=$((QUALITY+2))
+              # Alternative to -qp: -rc cqp -qp_i $QUALITY -qp_p $QUALITY -qp_b $QUALITY
+              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG -qp $QUALITY)
+            ;;
+            h264|avc)
+              get_preset_values GPU_PRESETS V_PRESET_ARG
+              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG -qp $QUALITY)
+            ;;
+            av1)
+              get_preset_values GPU_PRESETS V_PRESET_ARG
+              QUALITY=$((QUALITY+2))
+              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG -qp $QUALITY)
+            ;;
+            *)
+              echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
+              exit 2
+            ;;
+          esac
+        ;;
+        intel)
+          HW_DECODE_ARGS=(-init_hw_device qsv=hw:autodetect -hwaccel qsv -filter_hw_device hw -hwaccel_output_format qsv)
+          # -qsv_device /dev/dri/renderD128
+          GPU_PRESETS=("5" "3" "1")
+          case "$V_CODEC" in
+            h265|hevc)
+              get_preset_values GPU_PRESETS V_PRESET_ARG
+              QUALITY=$((QUALITY+2))
+              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
+            ;;
+            h264|avc)
+              get_preset_values GPU_PRESETS V_PRESET_ARG
+              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
+            ;;
+            av1)
+              get_preset_values GPU_PRESETS V_PRESET_ARG
+              QUALITY=$((QUALITY+2))
+              V_ENCODE_ARGS+=(av1_qsv -preset $V_PRESET_ARG -global_quality $QUALITY -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1)
+            ;;
+            *)
+              echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
+              exit 2
+            ;;
+          esac
+        ;;
+        apple|mac)
+          HW_DECODE_ARGS=(-init_hw_device videotoolbox -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
+          case "$V_CODEC" in
+            h265|hevc)
+              QUALITY=$((4*(QUALITY)))
+              # -tag:v hvc1 sets fourcc code to apple quicktime playback compatibility, hev1 is default fourcc code and not recognised by apple.
+              V_ENCODE_ARGS+=(hevc_videotoolbox -tag:v hvc1 -q:v $QUALITY)
+            ;;
+            h264|avc)
+              QUALITY=$((4*(QUALITY+2)))
+              V_ENCODE_ARGS+=(h264_videotoolbox -q:v $QUALITY)
+            ;;
+            *)
+              echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
+              exit 2
+            ;;
+          esac
+        ;;
+      esac
+    ;;
+    *)
+    echo "Unknown device: $DEVICE"
+    exit 2
+    ;;
+  esac
+  V_CODEC_ARGS+=(-bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
+}
+
+
+get_pix_fmt() {
+  case "$PIX_FMT" in
+      8)
+      case "$DEVICE" in
+        cpu)
+          PIX_FMT="yuv420p"
+          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
+          PIX_FMT_FILTER=(format=$PIX_FMT)
+        ;;
+        gpu)
+          PIX_FMT="nv12"
+          PIX_FMT_ARGS=()
+          PIX_FMT_FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
+          select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
+        ;;
+        *)
+          echo "Unknown device: $DEVICE"
+          exit 2
+        ;;
+      esac
+      ;;
+      10)
+      case "$DEVICE" in
+        cpu)
+          PIX_FMT="yuv420p10le"
+          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
+          PIX_FMT_FILTER=(format=$PIX_FMT)
+        ;;
+        gpu)
+          PIX_FMT="p010le"
+          PIX_FMT_ARGS=()
+          PIX_FMT_FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
+          select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
+        ;;
+        *)
+          echo "Unknown device: $DEVICE"
+          exit 2
+        ;;
+      esac
+      ;;
+      *)
+      echo "Unknown bit pixel format: $PIX_FMT"
+      exit 2
+      ;;
+  esac
+}
+
+## START ##
 # ARG INPUT
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -188,18 +639,23 @@ esac
 case "$PRESET" in
     l|low)
     QUALITY=25
+    BIT_RATE_MULT=0.3
     ;;
     m|medium)
     QUALITY=21
+    BIT_RATE_MULT=0.5
     ;;
     h|high)
     QUALITY=18
+    BIT_RATE_MULT=0.75
     ;;
     u|uncompresssed)
     QUALITY=0
+    BIT_RATE_MULT=1.0
     ;;
     k|keep)
     QUALITY=-1
+    BIT_RATE_MULT=1.0
     # This will be raw bitstream method
     ;;
     *)
@@ -208,401 +664,6 @@ case "$PRESET" in
     ;;
 esac
 
-get_preset_values() {
-  local PRESET_ARR="$1"
-  local OUTPUT=$2
-  local PRESET_VALUE
-  local local_arr=(${${(P)PRESET_ARR}[@]})
-  # echo "All elements: ${${(P)PRESET_ARR}[@]}"
-  # echo "1st element: ${${(P)PRESET_ARR}[1]}"
-  # echo "1st element: $local_arr[1]"
-  case "$PRESET" in
-    l|low)
-      PRESET_VALUE=$local_arr[1]
-    ;;
-    m|medium)
-      PRESET_VALUE=$local_arr[2]
-    ;;
-    h|high)
-      PRESET_VALUE=$local_arr[3]
-    ;;
-  esac
-  typeset -g "$OUTPUT"="$PRESET_VALUE"
-}
-
-
-get_output_format_standard() {
-  case "$OUTPUT_FORMAT_STANDARD" in
-      ntsc)
-        CORRECT_FPS_FILTER="fps=fps=ntsc"
-        CORRECT_FPS=$NTSC_FRAMERATE
-      ;;
-      ntsc_film)
-        CORRECT_FPS_FILTER="fps=fps=ntsc_film"
-        CORRECT_FPS=$NTSC_FILM_FRAMERATE
-      ;;
-      pal)
-        CORRECT_FPS_FILTER="fps=fps=pal"
-        CORRECT_FPS=$PAL_FRAMERATE
-      ;;
-      keep)
-        CORRECT_FPS_FILTER="fps=fps=source_fps"
-        CORRECT_FPS=$F_V_FPS
-      ;;
-      *)
-      echo "Unknown fix-type $OUTPUT_FORMAT_STANDARD"
-      exit 2
-      ;;
-  esac
-}
-
-get_a_bitrate() {
-  local NUM_CHANNELS=$2
-  local MAX_BIT_RATE=$3
-  local MIN_BIT_RATE=$4
-  local OUTPUT=$5
-  # Low to High order
-  get_preset_values $1 A_BIT_RATE_PER_CHANNEL
-  # echo "Bit rate: " $A_BIT_RATE_PER_CHANNEL
-  COUNT_CHANNELS=0
-  # echo "Number of channels: " $NUM_CHANNELS
-  for n in ${(s:.:)NUM_CHANNELS}; do
-    COUNT_CHANNELS=$((COUNT_CHANNELS + n))
-  done
-  BIT_RATE=$(( COUNT_CHANNELS * A_BIT_RATE_PER_CHANNEL ))
-  BIT_RATE=$(( BIT_RATE < MIN_BIT_RATE ? MIN_BIT_RATE : (BIT_RATE > MAX_BIT_RATE ? MAX_BIT_RATE : BIT_RATE) ))
-  # echo "Channel info: " $NUM_CHANNELS $COUNT_CHANNELS $A_BIT_RATE_PER_CHANNEL $BIT_RATE
-  typeset -g "$OUTPUT"=""$BIT_RATE"k"
-}
-
-get_a_bitrate_method() {
-  local A_VBR_ARGS=$1
-  local A_CBR_ARGS=$2
-  local OUTPUT=$2
-  case "$A_BIT_RATE_METHOD" in
-    vbr|variable)
-        A_BITRATE_ARGS=$A_VBR_ARGS
-      ;;
-    cbr|constant)
-        A_BITRATE_ARGS=$A_CBR_ARGS
-      ;;
-    *)
-      echo "Unknown Audio bitrate method: $A_BIT_RATE_METHOD"
-      ;;
-  esac
-  typeset -g "$OUTPUT"=$A_BITRATE_ARGS
-}
-
-get_a_encode_args() {
-  local NUM_CHANNELS=$1
-  local MAX_BIT_RATE=1024
-  local MIN_BIT_RATE=64
-  A_ENCODE_ARGS=(-c:a)
-  A_BIT_RATE="64k"
-  A_BIT_RATE_PER_CHANNEL=64
-  A_CBR_METHOD=(-b:a)
-  A_VBR_METHOD=(-q:a)
-  A_BIT_RATES_PER_CHANNEL_ARR=("64" "112" "160")
-  A_VBR_QUALITIES=("0" "4" "9")
-  case "$A_CODEC" in
-      aac)
-        if (( ${AVAILABLE_A_CODECS[(Ie)libfdk_aac]} )); then
-          # libfdk_aac is proprietary but a lot better, if available use it.
-          A_VBR_QUALITIES=(2 4 5)
-          A_BIT_RATES_PER_CHANNEL_ARR=("40" "72" "112")
-          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
-          get_preset_values VBR_QUALITY A_VBR_QUALITY
-          A_CBR_METHOD=(-vbr 0 -b:a $A_BIT_RATE)
-          A_VBR_METHOD=(-vbr $A_VBR_QUALITY)
-          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
-          A_ENCODE_ARGS+=(libfdk_aac $A_BIT_RATE_ARGS)
-        else
-          A_VBR_QUALITIES=("0.5" "1.4" "2.0")
-          A_BIT_RATES_PER_CHANNEL_ARR=("80" "112" "160")
-          get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
-          get_preset_values VBR_QUALITY A_VBR_QUALITY
-          A_CBR_METHOD+=($A_BIT_RATE)
-          A_VBR_METHOD+=($A_VBR_QUALITY)
-          get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
-          A_ENCODE_ARGS+=(aac $A_BIT_RATE_ARGS)
-        fi
-      ;;
-      ac3|dolby)
-        MAX_BIT_RATE=640
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
-        get_preset_values VBR_QUALITY A_VBR_QUALITY
-        A_CBR_METHOD+=($A_BIT_RATE)
-        A_BITRATE_ARGS=$A_CBR_METHOD
-        A_ENCODE_ARGS+=(ac3 $A_BIT_RATE_ARGS)
-      ;;
-      eac3|dolbyplus)
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
-        get_preset_values VBR_QUALITY A_VBR_QUALITY
-        A_CBR_METHOD+=($A_BIT_RATE)
-        A_BITRATE_ARGS=$A_CBR_METHOD
-        A_ENCODE_ARGS+=(eac3 $A_BIT_RATE_ARGS)
-      ;;
-      opus)
-        A_VBR_QUALITIES=("64" "96" "128")
-        A_BIT_RATES_PER_CHANNEL_ARR=("64" "96" "128")
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
-        get_a_bitrate A_VBR_QUALITIES $NUM_CHANNELS VBR_QUALITY
-        A_CBR_METHOD+=($A_BIT_RATE)
-        A_VBR_METHOD=${A_CBR_METHOD}
-        A_CBR_METHOD=(-vbr off)+$A_CBR_METHOD
-        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
-        A_ENCODE_ARGS+=(libopus $A_BIT_RATE_ARGS)
-      ;;
-      vorbis)
-        A_VBR_QUALITIES=("3.0" "5.0" "9.0")
-        get_preset_values VBR_QUALITY A_VBR_QUALITY
-        A_VBR_METHOD+=($A_VBR_QUALITY)
-        A_BIT_RATE_ARGS=$A_VBR_METHOD
-        A_ENCODE_ARGS+=(libvorbis $A_BIT_RATE_ARGS)
-      ;;
-      lpcm|pcm|none)
-        A_ENCODE_ARGS+=(pcm_s16le)
-      ;;
-      flac)
-        A_ENCODE_ARGS+=(flac)
-      ;;
-      alac)
-        A_ENCODE_ARGS+=(alac)
-      ;;
-      copy)
-        A_ENCODE_ARGS+=(copy)
-      ;;
-      mp3)
-        A_VBR_QUALITIES=("7" "3" "0")
-        get_a_bitrate A_BIT_RATES_PER_CHANNEL_ARR $NUM_CHANNELS $MAX_BIT_RATE $MIN_BIT_RATE A_BIT_RATE
-        get_preset_values VBR_QUALITY A_VBR_QUALITY
-        A_CBR_METHOD+=($A_BIT_RATE)
-        A_VBR_METHOD+=($A_VBR_QUALITY)
-        get_a_bitrate_method A_VBR_METHOD A_CBR_METHOD A_BIT_RATE_ARGS
-        A_ENCODE_ARGS+=(libmp3lame $A_BIT_RATE_ARGS)
-      ;;
-      *)
-        if (( ${AVAILABLE_A_CODECS[(Ie)$A_CODEC]} )); then
-          A_ENCODE_ARGS+=($A_CODEC -b:a ${BIT_RATE}k)
-        elif [[ -z $AUDIO_FILTER ]]; then
-          # Not rencoding audio
-          A_ENCODE_ARGS+=(copy)
-        else
-          echo "Unknown Video codec: $A_CODEC"
-          exit 2
-        fi
-      ;;
-  esac
-}
-
-get_device() {
-  for S_GPU in $SUPPORTED_GPUS; do
-    if [[ ${GPU:l} == *"$S_GPU"* ]]; then
-      GPU="$S_GPU"
-      DEVICE="gpu"
-      break
-    fi
-  done
-  # If no match to gpu use cpu
-  if [[ ${DEVICE:l} == "auto" ]]; then
-    DEVICE="cpu"
-  fi
-}
-
-select_on_device(){
-  local PRESET_ARR="$1"
-  local OUTPUT=$2
-  local PRESET_VALUE
-  local local_arr=(${${(P)PRESET_ARR}[@]})
-
-  case "$DEVICE" in
-    cpu)
-      PRESET_VALUE=$local_arr[1]
-    ;;
-    gpu)
-      case "$GPU" in
-        nvidia)
-          PRESET_VALUE=$local_arr[2]
-        ;;
-        amd)
-          PRESET_VALUE=$local_arr[3]
-        ;;
-        intel)
-          PRESET_VALUE=$local_arr[4]
-        ;;
-        apple|mac)
-          PRESET_VALUE=$local_arr[5]
-        ;;
-      esac
-    ;;
-    *)
-    echo "Unknown device: $DEVICE"
-    exit 2
-    ;;
-  esac
-  typeset -g "$OUTPUT"="$PRESET_VALUE"
-}
-
-get_v_encode_args() {
-  V_ENCODE_ARGS=(-c:v)
-  case "$DEVICE" in
-    cpu)
-      CPU_PRESETS=("fast" "medium" "slow")
-      HW_DECODE_ARGS=""
-      case "$V_CODEC" in
-          h266|vvc)
-            QUALITY=$((QUALITY+3))
-            get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libvvenc -preset $V_PRESET_ARG -qp $QUALITY)
-          ;;
-          h265|hevc)
-            QUALITY=$((QUALITY+2))
-            get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libx265 -preset $V_PRESET_ARG -crf $QUALITY)
-          ;;
-          h264|avc)
-            get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libx264 -preset $V_PRESET_ARG -crf $QUALITY)
-          ;;
-          vp9)
-            CPU_PRESETS=(2 1 0)
-            get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libvpx-vp9 -cpu-used $V_PRESET_ARG -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1)
-          ;;
-          av1)
-            CPU_PRESETS=(8 6 4)
-            get_preset_values CPU_PRESETS V_PRESET_ARG
-            QUALITY=$((QUALITY+2))
-            V_ENCODE_ARGS+=(libsvtav1 -preset $V_PRESET_ARG -svtav1-params tune=0 -crf $QUALITY)
-          ;;
-          ffv1|lossless)
-            # level 3 is version 3, the currently best version
-            V_ENCODE_ARGS+=(ffv1 -level 3)
-          ;;
-          mpeg2video)
-          # qscale is from 2-31, 2 is highest quality
-            V_ENCODE_ARGS+=(mpeg2video -qscale:v $(QUALITY-16))
-          ;;
-          *)
-          echo "Unknown Video codec: $V_CODEC"
-          exit 2
-          ;;
-      esac
-    ;;
-    gpu)
-      case "$GPU" in
-        nvidia)
-            HW_DECODE_ARGS=(-hwaccel cuda -hwaccel_output_format cuda)
-            # HW_INIT_FILTER=""
-            GPU_PRESETS=("p4" "p6" "p7")
-            case "$V_CODEC" in
-              h265|hevc)
-                get_preset_values GPU_PRESETS V_PRESET_ARG
-                QUALITY=$((QUALITY+1))
-                V_ENCODE_ARGS+=(hevc_nvenc -preset $V_PRESET_ARG -cq $QUALITY)
-              ;;
-              h264|avc)
-                # get_preset_values GPU_PRESETS V_PRESET_ARG
-                get_preset_values GPU_PRESETS V_PRESET_ARG
-                QUALITY=$((QUALITY-1))
-                V_ENCODE_ARGS+=(h264_nvenc -preset $V_PRESET_ARG -cq $QUALITY)
-              ;;
-              av1)
-                get_preset_values GPU_PRESETS V_PRESET_ARG
-                QUALITY=$((QUALITY+1))
-                V_ENCODE_ARGS+=(av1_nvenc -preset $V_PRESET_ARG -cq $QUALITY)
-              ;;
-              *)
-                echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
-                exit 2
-              ;;
-            esac
-        ;;
-        amd)
-          # ffmpeg -init_hw_device vulkan=vk:0 -init_hw_device amf=amf@vk:0 \
-          # -hwaccel amf -hwaccel_output_format amf_surface \
-          # -vf "hwmap=derive_device=vulkan,format=vulkan"
-          HW_DECODE_ARGS=(-init_hw_device vulkan=vk:0 -init_hw_device amf=amf@vk:0 -hwaccel amf -hwaccel_output_format amf_surface)
-          # HW_DECODE_ARGS=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan -filter_hw_device vk)
-          # HW_INIT_FILTER="hwupload"
-          GPU_PRESETS=("balanced" "quality" "high_quality")
-          case "$V_CODEC" in
-            h265|hevc)
-              get_preset_values GPU_PRESETS V_PRESET_ARG
-              QUALITY=$((QUALITY+2))
-              # Alternative to -qp: -rc cqp -qp_i $QUALITY -qp_p $QUALITY -qp_b $QUALITY
-              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG -qp $QUALITY)
-            ;;
-            h264|avc)
-              get_preset_values GPU_PRESETS V_PRESET_ARG
-              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG -qp $QUALITY)
-            ;;
-            av1)
-              get_preset_values GPU_PRESETS V_PRESET_ARG
-              QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG -qp $QUALITY)
-            ;;
-            *)
-              echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
-              exit 2
-            ;;
-          esac
-        ;;
-        intel)
-          HW_DECODE_ARGS=(-init_hw_device qsv=hw:autodetect -hwaccel qsv -filter_hw_device hw -hwaccel_output_format qsv)
-          # -qsv_device /dev/dri/renderD128
-          GPU_PRESETS=("5" "3" "1")
-          case "$V_CODEC" in
-            h265|hevc)
-              get_preset_values GPU_PRESETS V_PRESET_ARG
-              QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
-            ;;
-            h264|avc)
-              get_preset_values GPU_PRESETS V_PRESET_ARG
-              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
-            ;;
-            av1)
-              get_preset_values GPU_PRESETS V_PRESET_ARG
-              QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(av1_qsv -preset $V_PRESET_ARG -global_quality $QUALITY -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1)
-            ;;
-            *)
-              echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
-              exit 2
-            ;;
-          esac
-        ;;
-        apple|mac)
-          HW_DECODE_ARGS=(-init_hw_device videotoolbox -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
-          case "$V_CODEC" in
-            h265|hevc)
-              QUALITY=$((4*(QUALITY)))
-              # -tag:v hvc1 sets fourcc code to apple quicktime playback compatibility, hev1 is default fourcc code and not recognised by apple.
-              V_ENCODE_ARGS+=(hevc_videotoolbox -tag:v hvc1 -q:v $QUALITY)
-            ;;
-            h264|avc)
-              QUALITY=$((4*(QUALITY+2)))
-              V_ENCODE_ARGS+=(h264_videotoolbox -q:v $QUALITY)
-            ;;
-            *)
-              echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
-              exit 2
-            ;;
-          esac
-        ;;
-      esac
-    ;;
-    *)
-    echo "Unknown device: $DEVICE"
-    exit 2
-    ;;
-  esac
-  V_CODEC_ARGS+=(-bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
-}
-
-# -vf "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
-# -vf "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
 
 if [[ ${DEVICE:l} == "auto" ]]; then
   get_device
@@ -635,7 +696,7 @@ for F in $FILES; do
   mkdir -p $LOG_DIR
 
   echo "Resampling audio and video"
-  STREAMS=("${(f)$(ffprobe -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $F)}")
+  STREAMS=("${(fu)$(ffprobe -hide_banner -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $F)}")
   echo "Streams found:" $STREAMS
 
   if (( ${STREAMS[(Ie)audio]} )); then
@@ -646,22 +707,12 @@ for F in $FILES; do
     echo "Video found"
   fi
 
-  # PRESET_COMMANDS=(-c:v hevc_nvenc -preset p7 -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -cq $QUALITY)
-  # PRESET_COMMANDS=(-c:v libx265 -preset medium -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1 -crf $QUALITY)
-  # PRESET_COMMANDS=(-c:v ffv1 -level 3)
-  # VA-API example of transcope with deinterlace (intel/amd option)
-  # ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi -i input.mp4 -vf 'deinterlace_vaapi=rate=field:auto=1,scale_vaapi=w=1280:h=720' -c:v hevc_vaapi -b:v 5M output.mp4
   # Audio
   typeset -A A_FFPROBE_DICT
   while IFS== read -r key value; do
     A_FFPROBE_DICT[$key]=$value
-  done < <(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,bit_rate,sample_rate,channels -of default=noprint_wrappers=1 $F)
+  done < <(ffprobe -hide_banner -v error -select_streams a:0 -show_entries stream=codec_name,bit_rate,sample_rate,channels -of default=noprint_wrappers=1 $F)
 
-  # codec_name=ac3
-  # sample_rate=48000
-  # channels=6
-  # r_frame_rate=0/0
-  # bit_rate=384000
   F_A_CODEC=$A_FFPROBE_DICT[codec_name]
   F_A_SAMPLERATE=$A_FFPROBE_DICT[sample_rate]
   F_A_BITRATE=$A_FFPROBE_DICT[bit_rate]
@@ -671,18 +722,8 @@ for F in $FILES; do
   typeset -A V_FFPROBE_DICT
   while IFS== read -r key value; do
     V_FFPROBE_DICT[$key]=$value
-  done < <(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,field_order,r_frame_rate,pix_fmt,bits_per_raw_sample -of default=noprint_wrappers=1 $F)
-  # A_FFPROBE_ARR=("${(f)$(ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,bit_rate,sample_rate,channels -of default=noprint_wrappers=1 $F)}")
-  # V_FFPROBE_ARR=("${(f)$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,field_order,r_frame_rate,pix_fmt -of default=noprint_wrappers=1 $F)}")
-  # Example output of ffprobe
+  done < <(ffprobe -hide_banner -v error -select_streams V:0 -show_entries stream=codec_name,width,height,field_order,r_frame_rate,pix_fmt,bits_per_raw_sample,max_bit_rate,max_bitrate,avg_bitrate,bit_rate,buffer_size -of default=noprint_wrappers=1 $F)
 
-  # codec_name=mpeg2video
-  # width=720
-  # height=576
-  # pix_fmt=yuv420p
-  # field_order=tt
-  # r_frame_rate=25/1
-  # \w+ >=1 alphanumeric and _, \d+ >=1 number
   F_V_CODEC=$V_FFPROBE_DICT[codec_name]
   F_V_FIELD_ORDER=$V_FFPROBE_DICT[field_order]
   F_V_FPS=$V_FFPROBE_DICT[r_frame_rate]
@@ -690,72 +731,30 @@ for F in $FILES; do
   F_V_HEIGHT=$V_FFPROBE_DICT[height]
   F_V_PIX_FMT=$V_FFPROBE_DICT[pix_fmt]
   F_V_PIX_BITS=$V_FFPROBE_DICT[bits_per_raw_sample]
-  # F_V_CODEC=$(sed -nE 's/.*codec_name=(\w+).*/\1/p' $V_FFPROBE_ARR)
-  # F_V_FIELD_ORDER=$(sed -nE 's/.*field_order=(\w+).*/\1/p' $V_FFPROBE_ARR)
-  # F_V_FPS=$(sed -nE 's/.*r_frame_rate=(\d+).*/\1/p' $V_FFPROBE_ARR)
-  # F_V_WIDTH=$(sed -nE 's/.*width=(\d+).*/\1/p' $V_FFPROBE_ARR)
-  # F_V_HEIGHT=$(sed -nE 's/.*height=(\d+).*/\1/p' $V_FFPROBE_ARR)
-  # F_V_PIX_FMT=$(sed -nE 's/.*pix_fmt=(\w+).*/\1/p' $V_FFPROBE_ARR)
 
-  # F_A_CODEC=$(sed -nE 's/.*codec_name=(\w+).*/\1/p' $A_FFPROBE_ARR)
-  # F_A_SAMPLERATE=$(sed -nE 's/.*sample_rate=(\d+).*/\1/p' $A_FFPROBE_ARR)
-  # F_A_BITRATE=$(sed -nE 's/.*bit_rate=(\d+).*/\1/p' $A_FFPROBE_ARR)
-  # F_A_CHANNELS=$(sed -nE 's/.*channels=(\d+).*/\1/p' $A_FFPROBE_ARR)
+  # VIDEO BIT RATE
+  F_V_META_BIT_RATE=$(ffprobe -v error -select_streams V:0 -show_entries stream_tags=BPS -of default=noprint_wrappers=1:nokey=1 $F)
+  F_V_META_AVG_BIT_RATE=$V_FFPROBE_DICT[avg_bitrate]
+  F_V_META_MAX_BIT_RATE=$V_FFPROBE_DICT[max_bitrate]
+  F_V_META_BUFFER_SIZE=$V_FFPROBE_DICT[buffer_size]
+  F_V_STREAM_BIT_RATE=$V_FFPROBE_DICT[bit_rate]
+  F_V_STREAM_MAX_BIT_RATE=$V_FFPROBE_DICT[max_bit_rate]
+
+  F_AVG_BIT_RATE=$(( F_V_META_BIT_RATE > F_V_META_AVG_BIT_RATE ? F_V_STREAM_BIT_RATE > F_V_META_BIT_RATE ? F_V_STREAM_BIT_RATE : F_V_META_BIT_RATE : F_V_STREAM_BIT_RATE > F_V_META_AVG_BIT_RATE ? F_V_STREAM_BIT_RATE : F_V_META_AVG_BIT_RATE))
+  F_MAX_BIT_RATE=$(( F_V_META_MAX_BIT_RATE > F_V_STREAM_MAX_BIT_RATE ? F_V_META_MAX_BIT_RATE : F_V_STREAM_MAX_BIT_RATE ))
+  F_BUFFER_SIZE=$F_V_META_BUFFER_SIZE
+
+  AVG_BIT_RATE=$(( BIT_RATE_MULT * F_AVG_BIT_RATE ))
+  MAX_BIT_RATE=$(( BIT_RATE_MULT * F_MAX_BIT_RATE ))
+  BUFFER_SIZE=$(( BIT_RATE_MULT * F_BUFFER_SIZE ))
+  echo $AVG_BIT_RATE $MAX_BIT_RATE $BUFFER_SIZE
 
   if [[ $PIX_FMT == "keep" ]]; then
     PIX_FMT=$F_V_PIX_BITS
   fi
 
-  case "$PIX_FMT" in
-      # keep)
-      #   PIX_FMT_ARGS=(-pix_fmt $F_V_PIX_FMT)
-      #   # CPU CUDA AMF QSV VIDEOTOOLBOX
-      #   PIX_FMT_FILTERS=(format=$F_V_PIX_FMT scale_cuda=format=$F_V_PIX_FMT format=$F_V_PIX_FMT scale_qsv=format=$F_V_PIX_FMT hwdownload,format=$F_V_PIX_FMT)
-      #   select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
-      # ;;
-      8)
-      case "$DEVICE" in
-        cpu)
-          PIX_FMT="yuv420p"
-          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
-          PIX_FMT_FILTER=(format=$PIX_FMT)
-        ;;
-        gpu)
-          PIX_FMT="nv12"
-          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
-          PIX_FMT_FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
-          select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
-        ;;
-        *)
-          echo "Unknown device: $DEVICE"
-          exit 2
-        ;;
-      esac
-      ;;
-      10)
-      case "$DEVICE" in
-        cpu)
-          PIX_FMT="yuv420p10le"
-          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
-          PIX_FMT_FILTER=(format=$PIX_FMT)
-        ;;
-        gpu)
-          PIX_FMT="p010le"
-          PIX_FMT_ARGS=(-pix_fmt $PIX_FMT)
-          PIX_FMT_FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
-          select_on_device PIX_FMT_FILTERS PIX_FMT_FILTER
-        ;;
-        *)
-          echo "Unknown device: $DEVICE"
-          exit 2
-        ;;
-      esac
-      ;;
-      *)
-      echo "Unknown bit pixel format: $PIX_FMT"
-      exit 2
-      ;;
-  esac
+  # Get PIX_FMT, PIX_FMT_ARGS, PIX_FMT_FILTERS
+  get_pix_fmt
 
   # Filters
   VIDEO_FILTER_ARR=()
@@ -833,15 +832,9 @@ for F in $FILES; do
     fi
   fi
   # , delimiter for sub arguments
-  # echo "Video filter array: ${VIDEO_FILTER_ARR[@]}"
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"
-  # echo "Video filter: $VIDEO_FILTER"
-  # VIDEO_FILTER="${VIDEO_FILTER}[vout]"
-  # echo "Video filter: $VIDEO_FILTER"
   AUDIO_FILTER="${(j[,])AUDIO_FILTER_ARR:#}"
-  # echo "Audio filter: $AUDIO_FILTER"
-  # AUDIO_FILTER="${AUDIO_FILTER}[aout]"
-  # echo "Audio filter: $AUDIO_FILTER"
+
   if [[ ! -z "$VIDEO_FILTER" ]]; then
     V_FILTER_ARGS=(-vf "${VIDEO_FILTER}")
   else
@@ -863,53 +856,9 @@ for F in $FILES; do
   get_a_encode_args $F_A_CHANNELS
   get_v_encode_args
 
-  # FILTER_ARR=()
-  # ; delimiter for video + audio
-  # FILTER="${(j[;])FILTER_ARR:#}"
-  # if [[ ! -z "$FILTER" ]]; then
-  #   FILTER=(-filter_complex "$FILTER")
-  #   if [[ ! -z "$VIDEO_FILTER" ]]; then
-  #     FILTER+=(-map "[vout]")
-  #   fi
-  #
-  #   if [[ ! -z "$AUDIO_FILTER" ]]; then
-  #     FILTER+=(-map "[aout]")
-  #   fi
-  # fi
-    # With outputfile
-#     if [[ $(uname) == "Darwin" ]]; then
-#         ffmpeg -y -loglevel error -stats -i $F -filter_complex "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:0]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" -map "[vout]" -map "[aout]" -aspect 4:3 -r:v $rate -vsync cfr -c:v hevc_videotoolbox -q:v 80 -c:a aac -b:a 320k -profile:v main -tag:v hvc1 $OUTPUT/$FN_RESAMPLED
-#     else; then
-# NVENC is just the encoder and doesn't care a tonne about the rest e.g. -c:v nvenc_hevc -preset slow -b:v 5M
-# CUDA is a modern implementation of the gpu acceleration for filters and processing.
-# CUVID is the old deprecated version
-# You have to input as a cuda stream or upload to the gpu in the filter to use.
-# ffmpeg -hwaccel cuda -hwaccel_output_format cuda -i input output
-# cuda uses NVDEC to decode the input
-        # If file has size and is greater than 8.54GB (Dual layer Single Sided DVD-9 standard, max of a common DVD size) =  BLURAY
-        # if [ $(stat -f%z "$F" 2>/dev/null || stat -c%s "$F") -lt $MAX_DVD_SIZE ]; then
-            # echo file is not bluray
-#         ffmpeg -y -loglevel error -stats -hwaccel cuda -hwaccel_output_format cuda -i $F -filter_complex "[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film[vout];[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]" -map "[vout]" -map "[aout]" -aspect 4:3 -r:v $rate -vsync cfr -c:v hevc_nvenc -b:v 5M -preset slow -c:a ac3 -b:a 640k $OUTPUT/$FN_RESAMPLED
-#         Want to use aac codec -b:a 320k, but ac3 has better surround support. (phone also won't play aac)
-#         Example of raw input to cuda for nvidia accelerated split filter
-#         ffmpeg -y -vsync 0 -pix_fmt yuv420p -s 1920x1080 -i input.yuv -filter_complex "[0:v]hwupload_cuda,split=4[o1][o2][o3][o4]" -map "[o1]" -c:v h264_nvenc -b:v 8M output1.mp4 -map "[o2]" -c:v h264_nvenc -b:v 10M output2.mp4 -map "[o3]" -c:v h264_nvenc -b:v 12M output3.mp4 -map "[o4]" -c:v h264_nvenc -b:v 14M output4.mp4
-    if [[ ! -e $OUTPUT ]] || $FORCE; then
-      # if [[ $PRESET=="keep" && $V_CODEC-="keep" && $A_CODEC=="keep" && $LANGUAGE=="keep" && $PIX_FMT=="keep" && $FIX_TYPE=="p2nf" && ! $DEINTERLACE ]]
-      # echo "-y -loglevel $LOG -stats"
-      # echo $HW_DECODE_ARGS
-      # echo $ITSSCALE_ARGS
-      # echo "-i $F"
-      # echo $MAP_ARGS
-      # echo $V_FILTER_ARGS
-      # echo $V_ENCODE_ARGS
-      # echo $A_FILTER_ARGS
-      # echo $A_ENCODE_ARGS
-      # echo $S_ENCODE_ARGS
-      # echo $DISPOSITION_ARGS
-      # echo $FRAMERATE_ARGS
-      # echo $OUTPUT
 
-      FFMPEG_ARGS=(-y -loglevel "$LOG" -stats)
+    if [[ ! -e $OUTPUT ]] || $FORCE; then
+      FFMPEG_ARGS=(-hide_banner -y -loglevel "$LOG" -stats)
       FFMPEG_ARGS+=(${HW_DECODE_ARGS})
       FFMPEG_ARGS+=(${ITSSCALE_ARGS})
       FFMPEG_ARGS+=(-i "$F")
@@ -921,31 +870,12 @@ for F in $FILES; do
       FFMPEG_ARGS+=(${S_ENCODE_ARGS})
       FFMPEG_ARGS+=(${DISPOSITION_ARGS})
       FFMPEG_ARGS+=(${FRAMERATE_ARGS})
+      FFMPEG_ARGS+=(${PIX_FMT_ARGS})
       FFMPEG_ARGS+=("$OUTPUT")
 
       echo "ffmpeg "$FFMPEG_ARGS
 
       ffmpeg $FFMPEG_ARGS
-
-      # echo "ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i $F ${V_FILTER_ARGS} ${A_FILTER_ARGS} $FRAMERATE_ARGS $V_ENCODE_ARGS $PIX_FMT_ARGS $A_ENCODE_ARGS $OUTPUT"
-      # ffmpeg \
-      # -itsscale $((FPS_CORRECTION)) \
-      # -i "$F" \
-      # -map 0:s \
-      # -c:s copy \
-      # $F_SUBTITLES
-      # ffmpeg -y -loglevel $LOG -stats $HW_DECODE_ARGS -i "$F" $MAP_ARGS $V_FILTER_ARGS $V_ENCODE_ARGS $FRAMERATE_ARGS $A_FILTER_ARGS $A_ENCODE_ARGS $S_ENCODE_ARGS $DISPOSITION_ARGS "$OUTPUT"
-
-      # Lossless video and subtitle timestamp changes with audio resampling
-      # ffmpeg \
-      # -itsscale 1.0427083333333333 \ # Has to be a float
-      # -i /home/pinzani/Videos/DS9_S4_D2-B1_t01.mkv \
-      # -map 0:s -c:s copy \
-      # -map 0:v -c:v copy \
-      # -map 0:a -filter:a "atempo=24000/25025" -c:a ac3 \ # No pitch shift
-      # -map 0:a -filter:a "atempo=24000/25025,asetrate=24000/25025*48000,atempo=25025/24000,aresample=resampler=soxr:osr=48000" -c:a ac3 \ # Pitch shift
-      # -r 24000/1001 \
-      # /home/pinzani/Videos/test_lossless.mkv
     else;
         echo "Processed file found"
     fi
