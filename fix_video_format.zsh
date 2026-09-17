@@ -734,6 +734,13 @@ for F in $FILES; do
 
   # VIDEO BIT RATE
   F_V_META_BIT_RATE=$(ffprobe -v error -select_streams V:0 -show_entries stream_tags=BPS -of default=noprint_wrappers=1:nokey=1 $F)
+  INT_FIELDS=(avg_bitrate max_bitrate buffer_size bit_rate max_bit_rate)
+  for k in $INT_FIELDS; do
+    if [[ "$V_FFPROBE_DICT[$k]" == "N/A" ]]; then
+      V_FFPROBE_DICT[$k]=0
+    fi
+  done
+
   F_V_META_AVG_BIT_RATE=$V_FFPROBE_DICT[avg_bitrate]
   F_V_META_MAX_BIT_RATE=$V_FFPROBE_DICT[max_bitrate]
   F_V_META_BUFFER_SIZE=$V_FFPROBE_DICT[buffer_size]
@@ -742,6 +749,10 @@ for F in $FILES; do
 
   F_AVG_BIT_RATE=$(( F_V_META_BIT_RATE > F_V_META_AVG_BIT_RATE ? F_V_STREAM_BIT_RATE > F_V_META_BIT_RATE ? F_V_STREAM_BIT_RATE : F_V_META_BIT_RATE : F_V_STREAM_BIT_RATE > F_V_META_AVG_BIT_RATE ? F_V_STREAM_BIT_RATE : F_V_META_AVG_BIT_RATE))
   F_MAX_BIT_RATE=$(( F_V_META_MAX_BIT_RATE > F_V_STREAM_MAX_BIT_RATE ? F_V_META_MAX_BIT_RATE : F_V_STREAM_MAX_BIT_RATE ))
+  # If max isn't found, guess.
+  if (( $F_MAX_BIT_RATE <= 1 )); then
+    F_MAX_BIT_RATE=$F_AVG_BIT_RATE*2
+  fi
   F_BUFFER_SIZE=$F_V_META_BUFFER_SIZE
 
   AVG_BIT_RATE=$(( BIT_RATE_MULT * F_AVG_BIT_RATE ))
@@ -760,9 +771,8 @@ for F in $FILES; do
   VIDEO_FILTER_ARR=()
   AUDIO_FILTER_ARR=()
   FRAMERATE_ARGS=()
-  # Add pixel filter last
+  # Add pixel filter first
   VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
-  # VIDEO_FILTER="[0:V:0]setpts=PTS*$inverse_factor,fps=fps=ntsc_film,bwdif_cuda[vout]"
   if $DEINTERLACE && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
     DEINTERLACE_FILTER_ARR=()
     # CPU
