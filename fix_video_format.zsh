@@ -623,7 +623,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
     ;;
     -ofs|--output-format-standard)
-      echo $OUTPUT_FORMAT_STANDARD
+      OUTPUT_FORMAT_STANDARD=$2
       shift 2
     ;;
     -bp|--bit-pixel-format)
