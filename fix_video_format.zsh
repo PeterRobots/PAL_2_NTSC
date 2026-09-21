@@ -588,7 +588,7 @@ get_pix_fmt() {
       select_on_device FILTERS FILTER
     ;;
   esac
-  echo $FILTER
+
   typeset -g "$OUTPUT_FILTER"="$FILTER"
   typeset -g "$OUTPUT_ARGS"="$ARGS"
 }
@@ -623,7 +623,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
     ;;
     -ofs|--output-format-standard)
-      OUTPUT_FORMAT_STANDARD="$2"
+      echo $OUTPUT_FORMAT_STANDARD
       shift 2
     ;;
     -bp|--bit-pixel-format)
@@ -826,7 +826,7 @@ for F in $FILES; do
     A_FFPROBE_DICT[$key]=$value
   done < <(ffprobe -hide_banner -v error -select_streams a:0 -show_entries stream=codec_name,bit_rate,sample_rate,channels -of default=noprint_wrappers=1 $F)
 
-  echo -e "Audio probe results:\n" ${(Fkv)A_FFPROBE_DICT}
+  # echo -e "Audio probe results:\n" ${(Fkv)A_FFPROBE_DICT}
   F_A_CODEC=$A_FFPROBE_DICT[codec_name]
   F_A_SAMPLERATE=$A_FFPROBE_DICT[sample_rate]
   F_A_BITRATE=$A_FFPROBE_DICT[bit_rate]
@@ -863,7 +863,7 @@ for F in $FILES; do
   F_V_STREAM_BIT_RATE=$V_FFPROBE_DICT[bit_rate]
   F_V_STREAM_MAX_BIT_RATE=$V_FFPROBE_DICT[max_bit_rate]
 
-  echo -e "Video probe results:\n" ${(Fkv)V_FFPROBE_DICT}
+  # echo -e "Video probe results:\n" ${(Fkv)V_FFPROBE_DICT}
 
   # Get highest bitrates, naive approach
   F_AVG_BIT_RATE=$(( F_V_META_BIT_RATE > F_V_META_AVG_BIT_RATE ? F_V_STREAM_BIT_RATE > F_V_META_BIT_RATE ? F_V_STREAM_BIT_RATE : F_V_META_BIT_RATE : F_V_STREAM_BIT_RATE > F_V_META_AVG_BIT_RATE ? F_V_STREAM_BIT_RATE : F_V_META_AVG_BIT_RATE))
@@ -904,7 +904,6 @@ for F in $FILES; do
 
   # Get BITS, FORMAT, PIX_FMT_ARGS, PIX_FMT_FILTERS
   get_pix_fmt $PIX_BITS $PIX_FMT PIX_FMT_ARGS PIX_FMT_FILTER
-  echo "pixel filter = " $PIX_FMT_FILTER
   # Filters
   VIDEO_FILTER_ARR=()
   AUDIO_FILTER_ARR=()
@@ -930,7 +929,8 @@ for F in $FILES; do
   fi
   # CORRECT_FPS and CORRECT_FPS_FILTER
   get_output_format_standard
-  if [[ $OUTPUT_FORMAT_STANDARD != "keep" ]]; then
+  if [[ $OUTPUT_FORMAT_STANDARD:l != "keep" ]]; then
+    echo "Adjusting format to: " $OUTPUT_FORMAT_STANDARD:l
     FPS_CORRECTION=$(( CORRECT_FPS / F_V_FPS ))
     INVERSE_FPS_CORRECTION=$(( F_V_FPS / CORRECT_FPS ))
 
@@ -938,15 +938,16 @@ for F in $FILES; do
     # VIDEO_FILTER_ARR+=("setpts=PTS*$INVERSE_FPS_CORRECTION" $CORRECT_FPS_FILTER)
     VIDEO_FILTER_ARR+=($CORRECT_FPS_FILTER)
     # AUDIO_FILTER="[0:a:m:language:eng]asetrate=$factor*$samplerate,aresample=resampler=soxr:osr=$samplerate:[aout]"
-    FRAMERATE_ARGS+=(-r $CORRECT_FPS)
+    FRAMERATE_ARGS+=(-r $CORRECT_FPS -fps_mode cfr)
      # -fps_mode cfr
     if $PITCH_SHIFT; then
       AUDIO_FILTER_ARR+=("atempo=$FPS_CORRECTION" "asetrate=$FPS_CORRECTION*$F_A_SAMPLERATE" "atempo=$INVERSE_FPS_CORRECTION" "aresample=resampler=soxr:osr=$F_A_SAMPLERATE")
     else
       AUDIO_FILTER_ARR+=("atempo=$INVERSE_FPS_CORRECTION")
     fi
+  else
+    FRAMERATE_ARGS+=(-fps_mode passthrough)
   fi
-  FRAMERATE_ARGS+=(-fps_mode passthrough)
   # MAP ARGS
   # Video
   MAP_ARGS=(-map 0:v)
