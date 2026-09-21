@@ -315,37 +315,37 @@ select_on_device(){
 
 get_v_encode_args() {
   V_ENCODE_ARGS=(-c:v)
-
-  V_ENCODE_ARGS_COMMON=(-b:v $AVG_BIT_RATE -maxrate:v $MAX_BIT_RATE -bufsize:v $BUF_BIT_RATE)
+  V_ENCODE_ARGS_COMMON=(-b:v $AVG_BIT_RATE -maxrate:v $MAX_BIT_RATE -bufsize:v $BUFFER_SIZE)
   case "$DEVICE" in
     cpu)
       CPU_PRESETS=("fast" "medium" "slow")
       HW_DECODE_ARGS=""
+      COMMON_ARGS=($V_ENCODE_ARGS_COMMON -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
       case "$V_CODEC" in
           h266|vvc)
             QUALITY=$((QUALITY+3))
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libvvenc -preset $V_PRESET_ARG -qp $QUALITY)
+            V_ENCODE_ARGS+=(libvvenc -preset $V_PRESET_ARG -qp $QUALITY $COMMON_ARGS)
           ;;
           h265|hevc)
             QUALITY=$((QUALITY+2))
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libx265 -preset $V_PRESET_ARG -crf $QUALITY)
+            V_ENCODE_ARGS+=(libx265 -preset $V_PRESET_ARG -crf $QUALITY $COMMON_ARGS)
           ;;
           h264|avc)
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libx264 -preset $V_PRESET_ARG -crf $QUALITY)
+            V_ENCODE_ARGS+=(libx264 -preset $V_PRESET_ARG -crf $QUALITY $COMMON_ARGS)
           ;;
           vp9)
             CPU_PRESETS=(2 1 0)
             get_preset_values CPU_PRESETS V_PRESET_ARG
-            V_ENCODE_ARGS+=(libvpx-vp9 -cpu-used $V_PRESET_ARG -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1)
+            V_ENCODE_ARGS+=(libvpx-vp9 -cpu-used $V_PRESET_ARG -crf $QUALITY --auto-alt-ref=1 -lag-in-frames 25 -row-mt 1 $COMMON_ARGS)
           ;;
           av1)
             CPU_PRESETS=(8 6 4)
             get_preset_values CPU_PRESETS V_PRESET_ARG
             QUALITY=$((QUALITY+2))
-            V_ENCODE_ARGS+=(libsvtav1 -preset $V_PRESET_ARG -svtav1-params tune=0 -crf $QUALITY)
+            V_ENCODE_ARGS+=(libsvtav1 -preset $V_PRESET_ARG -svtav1-params tune=0 -crf $QUALITY $COMMON_ARGS)
           ;;
           ffv1|lossless)
             # level 3 is version 3, the currently best version
@@ -353,7 +353,7 @@ get_v_encode_args() {
           ;;
           mpeg2video)
           # qscale is from 2-31, 2 is highest quality
-            V_ENCODE_ARGS+=(mpeg2video -qscale:v $(QUALITY-16))
+            V_ENCODE_ARGS+=(mpeg2video -qscale:v $(QUALITY-16) $COMMON_ARGS)
           ;;
           *)
           echo "Unknown Video codec: $V_CODEC"
@@ -367,7 +367,7 @@ get_v_encode_args() {
             HW_DECODE_ARGS=(-hwaccel cuda -hwaccel_output_format cuda)
             # HW_INIT_FILTER=""
             GPU_PRESETS=("p4" "p6" "p7")
-            CRF_ARGS=(-tune hq -rc vbr -cq $QUALITY)
+            CRF_ARGS=(-tune hq -rc vbr -cq $QUALITY $V_ENCODE_ARGS_COMMON -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
             case "$V_CODEC" in
               h265|hevc)
                 get_preset_values GPU_PRESETS V_PRESET_ARG
@@ -399,8 +399,8 @@ get_v_encode_args() {
           # HW_DECODE_ARGS=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan -filter_hw_device vk)
           # HW_INIT_FILTER="hwupload"
           GPU_PRESETS=("balanced" "quality" "high_quality")
-          COMMON_VBR_ARGS=(-rc vbr_peak -preencode true -g 120 -high_motion_quality_boost_enable true -preanalysis true -max_b_frames 3 -pa_adaptive_mini_gop true -pa_lookahead_buffer_depth 40 -pa_taq_mode 2)
-          COMMON_CBR_ARGS=(-qp $QUALITY)
+          COMMON_VBR_ARGS=($V_ENCODE_ARGS_COMMON -rc vbr_peak -preencode true -g 120 -high_motion_quality_boost_enable true -preanalysis true -max_b_frames 3 -pa_adaptive_mini_gop true -pa_lookahead_buffer_depth 40 -pa_taq_mode 2)
+          COMMON_CBR_ARGS=(-qp $QUALITY $V_ENCODE_ARGS_COMMON)
 
           case "$V_CODEC" in
             h265|hevc)
@@ -410,16 +410,16 @@ get_v_encode_args() {
               VBR_ARGS=(-vbaq true $COMMON_VBR_ARGS)
               CBR_ARGS=($COMMON_CBR_ARGS)
               RATE_OPTIONS=(VBR_ARGS CBR_ARGS)
-              get_BRM_values RATE_OPTIONS RATE_ARGS
-              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG $RATE_ARGS)
+              get_BRM_values RATE_OPTIONS CRF_ARGS
+              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG $CRF_ARGS)
             ;;
             h264|avc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               VBR_ARGS=(-vbaq true $COMMON_VBR_ARGS)
               CBR_ARGS=($COMMON_CBR_ARGS)
               RATE_OPTIONS=(VBR_ARGS CBR_ARGS)
-              get_BRM_values RATE_OPTIONS RATE_ARGS
-              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG $RATE_ARGS)
+              get_BRM_values RATE_OPTIONS CRF_ARGS
+              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG $CRF_ARGS)
             ;;
             av1)
               get_preset_values GPU_PRESETS V_PRESET_ARG
@@ -427,8 +427,8 @@ get_v_encode_args() {
               VBR_ARGS=(-aq_mode caq $COMMON_VBR_ARGS)
               CBR_ARGS=($COMMON_CBR_ARGS)
               RATE_OPTIONS=(VBR_ARGS CBR_ARGS)
-              get_BRM_values RATE_OPTIONS RATE_ARGS
-              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG $RATE_ARGS)
+              get_BRM_values RATE_OPTIONS CRF_ARGS
+              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG $CRF_ARGS)
             ;;
             *)
               echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -444,16 +444,16 @@ get_v_encode_args() {
             h265|hevc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
+              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY $V_ENCODE_ARGS_COMMON)
             ;;
             h264|avc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
-              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY)
+              V_ENCODE_ARGS+=(hevc_qsv -preset $V_PRESET_ARG -crf $QUALITY $V_ENCODE_ARGS_COMMON)
             ;;
             av1)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(av1_qsv -preset $V_PRESET_ARG -global_quality $QUALITY -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1)
+              V_ENCODE_ARGS+=(av1_qsv -preset $V_PRESET_ARG -global_quality $QUALITY -extbrc 1 -look_ahead_depth 40 -adaptive_i 1 -adaptive_b 1 $V_ENCODE_ARGS_COMMON)
             ;;
             *)
               echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -463,15 +463,16 @@ get_v_encode_args() {
         ;;
         apple|mac)
           HW_DECODE_ARGS=(-init_hw_device videotoolbox -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
+          COMMON_ARGS=($V_ENCODE_ARGS_COMMON -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
           case "$V_CODEC" in
             h265|hevc)
               QUALITY=$((4*(QUALITY)))
               # -tag:v hvc1 sets fourcc code to apple quicktime playback compatibility, hev1 is default fourcc code and not recognised by apple.
-              V_ENCODE_ARGS+=(hevc_videotoolbox -tag:v hvc1 -q:v $QUALITY)
+              V_ENCODE_ARGS+=(hevc_videotoolbox -tag:v hvc1 -q:v $QUALITY $COMMON_ARGS)
             ;;
             h264|avc)
               QUALITY=$((4*(QUALITY+2)))
-              V_ENCODE_ARGS+=(h264_videotoolbox -q:v $QUALITY)
+              V_ENCODE_ARGS+=(h264_videotoolbox -q:v $QUALITY $COMMON_ARGS)
             ;;
             *)
               echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -486,7 +487,6 @@ get_v_encode_args() {
     exit 2
     ;;
   esac
-  V_CODEC_ARGS+=(-bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
 }
 
 
