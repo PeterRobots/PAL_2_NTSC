@@ -22,8 +22,7 @@ PITCH_SHIFT=true
 
 # Constants
 readonly SUPPORTED_GPUS=(nvidia amd intel apple)
-readonly SUPPORTED_GPU_PIX_FMTS=(nv1* nv2* p010* p210 p210* yuv444p bgr0 bgra rgb0 rgba)
-readonly SUPPORTED_GPUS=(nvidia amd intel apple)
+readonly SUPPORTED_GPU_PIX_FMTS=("nv1*" "nv2*" "p010*" "p210" "p210*" "yuv444p" "bgr0" "bgra" "rgb0" "rgba")
 readonly DVD_WIDTH=720
 # PAL
 readonly PAL_DVD_HEIGHT=576
@@ -281,26 +280,26 @@ get_device() {
 select_on_device(){
   local PRESET_ARR="$1"
   local OUTPUT=$2
-  local PRESET_VALUE
+  local DEVICE_VALUE
   local local_arr=(${${(P)PRESET_ARR}[@]})
 
   case "$DEVICE" in
     cpu)
-      PRESET_VALUE=$local_arr[1]
+      DEVICE_VALUE=$local_arr[1]
     ;;
     gpu)
       case "$GPU" in
         nvidia)
-          PRESET_VALUE=$local_arr[2]
+          DEVICE_VALUE=$local_arr[2]
         ;;
         amd)
-          PRESET_VALUE=$local_arr[3]
+          DEVICE_VALUE=$local_arr[3]
         ;;
         intel)
-          PRESET_VALUE=$local_arr[4]
+          DEVICE_VALUE=$local_arr[4]
         ;;
         apple|mac)
-          PRESET_VALUE=$local_arr[5]
+          DEVICE_VALUE=$local_arr[5]
         ;;
       esac
     ;;
@@ -309,7 +308,8 @@ select_on_device(){
     exit 2
     ;;
   esac
-  typeset -g "$OUTPUT"="$PRESET_VALUE"
+
+  typeset -g "$OUTPUT"="$DEVICE_VALUE"
 }
 
 
@@ -399,28 +399,36 @@ get_v_encode_args() {
           # HW_DECODE_ARGS=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan -filter_hw_device vk)
           # HW_INIT_FILTER="hwupload"
           GPU_PRESETS=("balanced" "quality" "high_quality")
-          VBR_ARGS=(-rc vbr_peak)
-          VBR_EXTRAS=(-preencode true -g 120 -high_motion_quality_boost_enable true -preanalysis true -max_b_frames 3 -pa_adaptive_mini_gop true -pa_lookahead_buffer_depth 40 -pa_taq_mode 2)
-          AV1=(-aq_mode caq)
-          H265=(-vbaq true)
-          H264=(-vbaq true)
-          CRF_ARGS=(-qp $QUALITY)
+          COMMON_VBR_ARGS=(-rc vbr_peak -preencode true -g 120 -high_motion_quality_boost_enable true -preanalysis true -max_b_frames 3 -pa_adaptive_mini_gop true -pa_lookahead_buffer_depth 40 -pa_taq_mode 2)
+          COMMON_CBR_ARGS=(-qp $QUALITY)
 
           case "$V_CODEC" in
             h265|hevc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
               # Alternative to -qp: -rc cqp -qp_i $QUALITY -qp_p $QUALITY -qp_b $QUALITY
-              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG $RATE_ARGS )
+              VBR_ARGS=(-vbaq true $COMMON_VBR_ARGS)
+              CBR_ARGS=($COMMON_CBR_ARGS)
+              RATE_OPTIONS=(VBR_ARGS CBR_ARGS)
+              get_BRM_values RATE_OPTIONS RATE_ARGS
+              V_ENCODE_ARGS+=(hevc_amf -preset $V_PRESET_ARG $RATE_ARGS)
             ;;
             h264|avc)
               get_preset_values GPU_PRESETS V_PRESET_ARG
-              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG -rc vbr_peak -qp $QUALITY)
+              VBR_ARGS=(-vbaq true $COMMON_VBR_ARGS)
+              CBR_ARGS=($COMMON_CBR_ARGS)
+              RATE_OPTIONS=(VBR_ARGS CBR_ARGS)
+              get_BRM_values RATE_OPTIONS RATE_ARGS
+              V_ENCODE_ARGS+=(h264_amf -preset $V_PRESET_ARG $RATE_ARGS)
             ;;
             av1)
               get_preset_values GPU_PRESETS V_PRESET_ARG
               QUALITY=$((QUALITY+2))
-              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG -rc vbr_peak -qp $QUALITY)
+              VBR_ARGS=(-aq_mode caq $COMMON_VBR_ARGS)
+              CBR_ARGS=($COMMON_CBR_ARGS)
+              RATE_OPTIONS=(VBR_ARGS CBR_ARGS)
+              get_BRM_values RATE_OPTIONS RATE_ARGS
+              V_ENCODE_ARGS+=(av1_amf -preset $V_PRESET_ARG $RATE_ARGS)
             ;;
             *)
               echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -488,18 +496,17 @@ get_pix_fmt() {
   local OUTPUT_ARGS=$3
   local OUTPUT_FILTER=$4
   # CPU, NVENC, AMF, QSV, APPLE
-  local FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
   local CHROMA
   local ARGS
   local FILTER
 
   case "$DEVICE" in
-    CPU)
+    cpu)
       ARGS=(-pix_fmt $PIX_FMT)
       FILTER=(format=$PIX_FMT)
     ;;
-    GPU)
-      # If pixel format isn't supported, set to a supported default
+    gpu)
+      # Compare against basic gpu support format list
       if [[ ! "$PIX_FMT" == (${~${(j:|:)SUPPORTED_GPU_PIX_FMTS}}) ]]; then
         case "$PIX_FMT" in
           nv24|yuv444*)
@@ -577,13 +584,15 @@ get_pix_fmt() {
         esac
       fi
       ARGS=()
+      local FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
       select_on_device FILTERS FILTER
     ;;
   esac
-
+  echo $FILTER
   typeset -g "$OUTPUT_FILTER"="$FILTER"
   typeset -g "$OUTPUT_ARGS"="$ARGS"
 }
+
 
 ## START ##
 # ARG INPUT
@@ -894,8 +903,8 @@ for F in $FILES; do
   fi
 
   # Get BITS, FORMAT, PIX_FMT_ARGS, PIX_FMT_FILTERS
-  get_pix_fmt $PIX_BITS $PIX_FMT PIX_FMT_ARGS PIX_FMT_FILTERS
-
+  get_pix_fmt $PIX_BITS $PIX_FMT PIX_FMT_ARGS PIX_FMT_FILTER
+  echo "pixel filter = " $PIX_FMT_FILTER
   # Filters
   VIDEO_FILTER_ARR=()
   AUDIO_FILTER_ARR=()
