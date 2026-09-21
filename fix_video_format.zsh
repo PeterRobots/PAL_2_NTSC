@@ -22,6 +22,8 @@ PITCH_SHIFT=true
 
 # Constants
 readonly SUPPORTED_GPUS=(nvidia amd intel apple)
+readonly SUPPORTED_GPU_PIX_FMTS=(nv1* nv2* p010* p210 p210* yuv444p bgr0 bgra rgb0 rgba)
+readonly SUPPORTED_GPUS=(nvidia amd intel apple)
 readonly DVD_WIDTH=720
 # PAL
 readonly PAL_DVD_HEIGHT=576
@@ -66,6 +68,7 @@ get_preset_values() {
   esac
   typeset -g "$OUTPUT"="$PRESET_VALUE"
 }
+
 
 get_BRM_values() {
   local BRM=$1
@@ -480,56 +483,42 @@ get_v_encode_args() {
 
 
 get_pix_fmt() {
-  local PIX_FMT="$1"
-  local OUTPUT_ARGS=$2
-  local OUTPUT_FILTER=$3
+  local PIX_BITS="$1"
+  local PIX_FMT="$2"
+  local OUTPUT_ARGS=$3
+  local OUTPUT_FILTER=$4
   local ARGS
   local FILTER
+  # CPU, NVENC, AMF, QSV, APPLE
+  local FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
 
-
-  case "$PIX_FMT" in
-      8)
-      case "$DEVICE" in
-        cpu)
-          PIX_FMT="yuv420p"
-          ARGS=(-pix_fmt $PIX_FMT)
-          FILTER=(format=$PIX_FMT)
-        ;;
-        gpu)
-          PIX_FMT="nv12"
-          ARGS=()
-          FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
-          select_on_device FILTERS FILTER
-        ;;
-        *)
-          echo "Unknown device: $DEVICE"
-          exit 2
-        ;;
-      esac
-      ;;
-      10)
-      case "$DEVICE" in
-        cpu)
-          PIX_FMT="yuv420p10le"
-          ARGS=(-pix_fmt $PIX_FMT)
-          FILTER=(format=$PIX_FMT)
-        ;;
-        gpu)
-          PIX_FMT="p010le"
-          ARGS=()
-          FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
-          select_on_device FILTERS FILTER
-        ;;
-        *)
-          echo "Unknown device: $DEVICE"
-          exit 2
-        ;;
-      esac
-      ;;
-      *)
-      echo "Unknown bit pixel format: $PIX_FMT"
-      exit 2
-      ;;
+  case "$DEVICE" in
+    CPU)
+      ARGS=(-pix_fmt $PIX_FMT)
+      FILTER=(format=$PIX_FMT)
+    ;;
+    GPU)
+      # If pixel format isn't supported, set to a supported default
+      if [[ ! "$PIX_FMT" == (${~${(j:|:)SUPPORTED_GPU_PIX_FMTS}}) ]]; then
+        case "$PIX_BITS" in
+          8)
+            PIX_FMT="nv12"
+          ;;
+          10)
+            PIX_FMT="p010"
+          ;;
+          12)
+            PIX_FMT="p012"
+          ;;
+          *)
+            echo "Unknown bit pixel depth: $PIX_BITS"
+            exit 2
+          ;;
+        esac
+      fi
+      ARGS=()
+      select_on_device FILTERS FILTER
+    ;;
   esac
 
   typeset -g "$OUTPUT_FILTER"="$FILTER"
@@ -822,50 +811,30 @@ for F in $FILES; do
   echo "Avg Bit Rate: " $AVG_BIT_RATE "Max Bit Rate: " $MAX_BIT_RATE "Buffer size: " $BUFFER_SIZE
 
   if [[ $PIX_FMT == "keep" ]]; then
+    PIX_FMT=$F_V_PIX_FMT
     PIX_BITS=$F_V_PIX_BITS
   fi
 
   if [[ ! $PIX_BITS =~ ^[0-9]+$ ]]; then
-    case "${F_V_PIX_FMT:l}" in
-        nv12|yuv*p)
+    case "${PIX_FMT:l}" in
+        p*8*|i*|nv1*|yuv*p)
           PIX_BITS=8
         ;;
-        yuv*p10*)
+        p*10*|*p10*)
           PIX_BITS=10
         ;;
-        yuv*p12*)
+        p*12*|*p12*)
           PIX_BITS=12
         ;;
         *)
-        echo "Unknown preset: $PRESET"
+        echo "No pixel bit depth found and unrecognised pixel format: $PIX_FMT"
         exit 2
         ;;
     esac
   fi
 
-  # Subsampling
-  case "${F_V_PIX_FMT:l}" in
-      *400*)
-        PIX_BITS=8
-      ;;
-      *420*)
-        PIX_BITS=10
-      ;;
-      *422*)
-        PIX_BITS=12
-      ;;
-      *444*)
-        PIX_BITS=12
-      ;;
-      *)
-      echo "Unknown preset: $PRESET"
-      exit 2
-      ;;
-  esac
-
-  # Get PIX_FMT, PIX_FMT_ARGS, PIX_FMT_FILTERS
-  get_pix_fmt $PIX_BITS PIX_FMT_ARGS PIX_FMT_FILTERS
-
+  # Get BITS, FORMAT, PIX_FMT_ARGS, PIX_FMT_FILTERS
+  get_pix_fmt $PIX_BITS $PIX_FMT PIX_FMT_ARGS PIX_FMT_FILTERS
 
   # Filters
   VIDEO_FILTER_ARR=()

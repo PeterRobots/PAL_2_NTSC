@@ -92,6 +92,7 @@ You can still aim for smaller files with a lower quality preset or use `cpu` for
 	- Supports a range of nvidia gpus, codec support will be limited on older gpus
 	- Decoding: H.264, HEVC, MJPEG, MPEG-1/2/4, VP8/VP9, VC-1, AV1
 	- Encoding: `all`
+		- https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvenc-application-note/index.html
 	- Filters:  scale, deinterlace
 - `intel` with `qsv`  https://trac.ffmpeg.org/wiki/Hardware/QuickSync
 	- Supports a range of intel chips, codec support will be limited on older gpus or igpus
