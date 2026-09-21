@@ -487,10 +487,11 @@ get_pix_fmt() {
   local PIX_FMT="$2"
   local OUTPUT_ARGS=$3
   local OUTPUT_FILTER=$4
-  local ARGS
-  local FILTER
   # CPU, NVENC, AMF, QSV, APPLE
   local FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
+  local CHROMA
+  local ARGS
+  local FILTER
 
   case "$DEVICE" in
     CPU)
@@ -500,19 +501,78 @@ get_pix_fmt() {
     GPU)
       # If pixel format isn't supported, set to a supported default
       if [[ ! "$PIX_FMT" == (${~${(j:|:)SUPPORTED_GPU_PIX_FMTS}}) ]]; then
-        case "$PIX_BITS" in
-          8)
-            PIX_FMT="nv12"
+        case "$PIX_FMT" in
+          nv24|yuv444*)
+            case "$PIX_BITS" in
+              8)
+                PIX_FMT="nv24"
+              ;;
+              10)
+                PIX_FMT="yuv444p10le"
+              ;;
+              12)
+                # 12 isn't supported widely on gpus
+                PIX_FMT="yuv444p10le"
+              ;;
+              *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+              ;;
+            esac
           ;;
-          10)
-            PIX_FMT="p010"
+          nv16|yuv422*)
+            case "$PIX_BITS" in
+              8)
+                PIX_FMT="nv16"
+              ;;
+              10)
+                PIX_FMT="p210le"
+              ;;
+              12)
+                # 12 isn't supported widely on gpus
+                PIX_FMT="p212le"
+              ;;
+              *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+              ;;
+            esac
           ;;
-          12)
-            PIX_FMT="p012"
+          p*|nv12|yuv420*)
+            case "$PIX_BITS" in
+              8)
+                PIX_FMT="nv12"
+              ;;
+              10)
+                PIX_FMT="p010le"
+              ;;
+              12)
+                PIX_FMT="p012le"
+              ;;
+              *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+              ;;
+            esac
           ;;
           *)
-            echo "Unknown bit pixel depth: $PIX_BITS"
-            exit 2
+            echo "Unknown pixel format, defaulting to 420 formats."
+            case "$PIX_BITS" in
+              8)
+                PIX_FMT="nv12"
+              ;;
+              10)
+                PIX_FMT="p010le"
+              ;;
+              12)
+                # 12 isn't support widely on gpus
+                PIX_FMT="p012le"
+              ;;
+              *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+              ;;
+            esac
           ;;
         esac
       fi
