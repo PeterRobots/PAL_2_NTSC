@@ -22,7 +22,7 @@ FORCE=false
 PITCH_SHIFT=true
 
 # Constants
-readonly SUPPORTED_GPUS=(nvidia amd intel apple)
+readonly SUPPORTED_GPUS=("nvidia" "amd" "intel" "apple")
 readonly SUPPORTED_GPU_PIX_FMTS=("nv1*" "nv2*" "p010*" "p210" "p210*" "yuv444p" "bgr0" "bgra" "rgb0" "rgba")
 readonly DVD_WIDTH=720
 # PAL
@@ -296,9 +296,17 @@ get_device() {
   esac
 
   # Extract gpu name if it matches supported GPUs, return lowercase array
-  GPUS=( ${(M)SUPPORTED_GPUS:#*${(j:|:L)GPUS}*} )
+  # Lower case
+  GPUS=( ${(L)GPUS} )
+  GPUS=( ${(M)GPUS[(r)${(j:|:)SUPPORTED_GPUS}]} )
   # Primary GPU
-  GPU=${SUPPORTED_GPUS[(r)*${GPU:l}*]}
+  GPU="${GPU:l}"
+  # clean up string symbols
+  GPU="${GPU//[^[:alnum:][:space:]]/}"
+  # Convert to array for array intersection, I couldn't get string matching to work
+  GPU=(${(s: :)GPU})
+  GPU=${(M)GPU[(r)${(j:|:)SUPPORTED_GPUS}]}
+  echo "Primary gpu is: "$GPU
   DEVICE=${DEVICE:l}
 
   if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]] && [[ ! -z $GPU ]]; then
