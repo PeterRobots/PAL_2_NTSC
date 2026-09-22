@@ -1,5 +1,6 @@
 # Requirements
-- Tested on `mac` and `linux`, `windows (wsl)` #untested.
+- Tested on `mac` and `linux`
+- Untested `windows (wsl)`
 - `ZSH`
 - `ffmpeg`
     - (mac/linux/wsl) (brew) you can install a fullfat ffmpeg with: `brew install ffmpeg-full`
@@ -7,7 +8,6 @@
     - Or download an appropriate version from ffmpeg: https://ffmpeg.org/download.html
         - Ensure appropriate libraries for your intended use (H264, H265, AV1, hardware acceleration...)
         - Check your installed ffmpeg output with: `ffmpeg` in your terminal.        
-- `mkvtoolnix` installed
 
 ## Test systems
 ```Linux
@@ -33,7 +33,16 @@ GPU: M1 (videotoolbox)
 - Set verbosity `-v level`
     - Without `level`, `-v` sets to `verbose`
 
-Example: `./fix_video_format.zsh -i bad_pal_video.mkv -t pal -p medium -d gpu -v -o fixed_pal_video.mkv`
+Example: `./fix_video_format.zsh -i ./bad_pal_video.mkv -cv h264 -d nvidia -al eng -sl none -p medium -ofs ntsc_film -o ./fixed_pal_video.mkv`
+`./fix_video_format.zsh`, source and run the program in zsh environment
+`-i ./bad_pal_video.mkv`, input file path
+`-cv h264`, (Opt) video codec
+`-d nvidia`, (Opt) Hardware accelerator
+`-al eng`, (Opt) default audio language
+`-sl none`, (Opt) default subtitle language (none disables subtitles by default)
+`-p medium`, (Opt) quality preset
+`-ofs ntsc_film`, (Opt) correct/original format of media
+`-o fixed_pal_video.mkv`, (Opt) output location and name.
 
 # Presets
 1) Low
@@ -41,7 +50,7 @@ Example: `./fix_video_format.zsh -i bad_pal_video.mkv -t pal -p medium -d gpu -v
 	- Smallest file size (aiming for `~0.3X` compression)
 2) Medium
 	- Slight loss of quality compared to source
-	- Reasonable file size (`~0.5X` compression)
+	- Reasonable file size (`~0.6X` compression)
 3) High
 	- Intended to visually lossless compared to source
 	- Some compression compared to source (`~0.9X` compression)
@@ -53,7 +62,11 @@ Variable rate (`vbr`) will be more efficient than Constant (`cbr`), but may not 
 ## Video
 Similarly to audio I aimed to minimise the effect of codec choice on the video quality where possible. Like with audio, not all codecs or hardware accelerated methods are equal and there will be some variation in quality.
 
-The settings were gathered more piecemeal compared to the audio, and I've tried tomatch my presets to the encoders presets.
+I've also tried to standardise for quality across encoding methods. You should get the same quality with the same preset, regardless of codec or encoder.
+This is something I'm actively working on, I need to do image quality comparisons, ideally with quantitative results.
+The file sizes are not standardised, `cpu` will usually have better file sizes for the same quality.
+
+For now I've done the best I can with the hardware I have access to. (Please bug report if you have issues!)
 
 
 # Explanation
@@ -70,6 +83,7 @@ Q) https://github.com/staxrip/staxrip
 A) If you use windows it looks like a great option
 
 I justify this project accessible script for fixing badly converted region formatted media with streamlined encoding options.
+
 ### Options
 The first choice is whether you want to use software `cpu` method or some kind of hardware accelerated method.
 
@@ -83,8 +97,6 @@ You can still aim for smaller files with a lower quality preset or use `cpu` for
 	- Filters: `all`
 - `amd` with `amf` and `vulkan`
 	- Supports a range of amd chips, codec support will be limited on older gpus or igpus
-	- Missing deinterlacing support on `amf` required `directx`, `vaapi` or `vulkan`
-		- I went with `vulkan` as it was newer and crossplatform
 	- Decoding (`amf`): H.264, HEVC, AV1
 	- Encoding (`amf`): H.264, HEVC, AV1
 	- Filters (`vulkan`): scale, deinterlace
@@ -94,34 +106,37 @@ You can still aim for smaller files with a lower quality preset or use `cpu` for
 	- Encoding: `all`
 		- https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvenc-application-note/index.html
 	- Filters:  scale, deinterlace
-- `intel` with `qsv`  https://trac.ffmpeg.org/wiki/Hardware/QuickSync
+- `intel` with `qsv`
 	- Supports a range of intel chips, codec support will be limited on older gpus or igpus
 	- Decoding: H.264, MPEG-2, MPEG-4 part 2, VC-1, H.265
 	- Encoding: H.264, HEVC, AV1
 	- Filters:  scale, deinterlace
-	- Compatibiltity and setup is a bit of a nightmare.
+	- Compatibility and setup is a bit of a nightmare.
+ 		- https://trac.ffmpeg.org/wiki/Hardware/QuickSync
+ 		- Untested for now.
 - `apple` with `videotoolbox`
 	- Supports a range of apple chips, codec support will be limited on older chips and intel based macs may not work with this option
 	- Decoding: H.263, H.264, HEVC, MPEG-1, MPEG-2, MPEG-4 Part 2, ProRes
 	- Encoding: H.264, HEVC, ProRes
-	- Filters (`cpu`): `all` 
-- I have yet to explore`VAAPI` as an option https://trac.ffmpeg.org/wiki/Hardware/VAAPI
+	- Filters (`cpu`): `all`
+
 ### Stages
 There's three stages where cpu or hardware acceleration comes into play, depending on available hardware, not all stages may be possible.
-0) `.mkv` manipulation with `mkvtoolnix`
-	- If **not deinterlacing** and you just want to correct speeds, this is skips other stages and just fixes the timestamps of each stream.
-1) Decode
+1) Bit stream packet timestamp changes
+	- Only activated if `-ofs` is set
+2) Decode
 	- DVDs: MPEG-2
 	- Blu-rays: H.264 (MPEG-4 AVC), VC-1, or MPEG-2.
 	- 4K Ultra HD Blu-rays: H.265 (HEVC)
 	I do not specify input codecs, I leave this up to ffmpeg and hardware acceleration libraries to handle. This could cause some edge cases to fail, such as if an acceleration device does not support `mpeg2video` or another codec.
-2) Filters
-	- Video: 
-		- Correct FPS and runtime
+3) Filters
+	- Video:
+		- If using `gpu` methods, pixel formats and chroma subsampling will be altered to compatible pixel formats.
+  			- I've done my best to automatically preserve bit depth and chroma subsampling.
 		- Deinterlace
 	- Audio:
 		- Correct pitch and runtime
-3) Encode
+4) Encode
 	- Choice of codecs with optimised presets
 	- `cpu`
 	- Hardware accelerated
