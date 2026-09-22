@@ -4,6 +4,7 @@ zmodload zsh/mathfunc
 INPUT=""
 OUTPUT=""
 DEVICE="auto"
+DEVICE_IDX=0
 LOG="fatal"
 PRESET="medium"
 V_CODEC="h264"
@@ -263,17 +264,61 @@ get_a_encode_args() {
 
 
 get_device() {
-  for S_GPU in $SUPPORTED_GPUS; do
-    if [[ ${GPU:l} == *"$S_GPU"* ]]; then
-      GPU="$S_GPU"
-      DEVICE="gpu"
-      break
-    fi
-  done
-  # If no match to gpu use cpu
-  if [[ ${DEVICE:l} == "auto" ]]; then
+  local OSTYPE="$1"
+  DEVICE=$2
+  DEVICE_IDX=$3
+  local GPU_OUTPUT=$4
+
+  # PLATFORM
+  case "$OSTYPE" in
+    darwin*)
+      GPU=$(system_profiler SPDisplaysDataType | grep -i "chipset")
+      GPUS=($P_GPU)
+      AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+      AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
+      ;;
+    linux*)
+      GPUS=($(lspci | grep -i --color 'vga\|3d\|2d'))
+      GPU=$(glxinfo | grep -E "OpenGL renderer")
+      AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+      AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
+      ;;
+    msys*) # WSL 2.0 only
+      # GPU=$(wmic path win32_VideoController get caption)
+      GPUS=($(lspci | grep -i --color 'vga\|3d\|2d'))
+      GPU=$(glxinfo | grep -E "OpenGL renderer")
+      AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+      AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
+      ;;
+    *)
+      echo "Unknown platform: $OSTYPE"
+      ;;
+  esac
+
+  # Extract gpu name if it matches supported GPUs, return lowercase array
+  GPUS=( ${(M)SUPPORTED_GPUS:#*${(j:|:L)GPUS}*} )
+  # Primary GPU
+  GPU=${SUPPORTED_GPUS[(r)*${GPU:l}*]}
+  DEVICE=${DEVICE:l}
+
+  if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]] && [[ ! -z $GPU ]]; then
+    DEVICE="gpu"
+  # Check if DEVICE is specified to an active, supported gpu
+  elif [[ "$DEVICE" == (${~${(j:|:)GPUS}}) ]]; then
+    GPU="$DEVICE"
+    DEVICE="gpu"
+  fi
+  # If no match to gpu on auto setting, use cpu
+  if [[ $DEVICE == "auto" ]]; then
     DEVICE="cpu"
   fi
+
+  if [[ -z $GPU && $DEVICE != "cpu" ]]; then
+    echo "Device is gpu, but none found: $DEVICE"
+    exit 2
+  fi
+
+  typeset -g "$GPU_OUTPUT"="$GPU"
 }
 
 
@@ -298,7 +343,7 @@ select_on_device(){
         intel)
           DEVICE_VALUE=$local_arr[4]
         ;;
-        apple|mac)
+        apple)
           DEVICE_VALUE=$local_arr[5]
         ;;
       esac
@@ -437,8 +482,8 @@ get_v_encode_args() {
           esac
         ;;
         intel)
-          HW_DECODE_ARGS=(-init_hw_device qsv=hw:autodetect -hwaccel qsv -filter_hw_device hw -hwaccel_output_format qsv)
-          # -qsv_device /dev/dri/renderD128
+          HW_DECODE_ARGS=(-hwaccel qsv -init_hw_device qsv=hw:autodetect -filter_hw_device hw -hwaccel_output_format qsv)
+          # -init_hw_device qsv=hw:autodetect -qsv_device /dev/dri/renderD128
           GPU_PRESETS=("5" "3" "1")
           case "$V_CODEC" in
             h265|hevc)
@@ -461,7 +506,7 @@ get_v_encode_args() {
             ;;
           esac
         ;;
-        apple|mac)
+        apple)
           HW_DECODE_ARGS=(-init_hw_device videotoolbox -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld)
           COMMON_ARGS=($V_ENCODE_ARGS_COMMON -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
           case "$V_CODEC" in
@@ -640,6 +685,10 @@ while [[ $# -gt 0 ]]; do
       DEVICE="$2"
       shift 2
     ;;
+    -di|--device-index)
+      DEVICE_IDX="$2"
+      shift 2
+    ;;
     -ofs|--output-format-standard)
       OUTPUT_FORMAT_STANDARD=$2
       shift 2
@@ -701,7 +750,8 @@ while [[ $# -gt 0 ]]; do
       echo "  -ofs, --output-format-standard   Set correct output format standard: keep, pal, ntsc_film, ntsc  (default: keep)"
       echo "  -cv, --video-codec    Set video codec: keep (maintain input codec), h266|vvc, h265|hevc, h264|avc, vp9, av1, ffv1|lossless (default: h264)"
       echo "  -ca, --audio-codec    Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac ; Legacy: mp3 (default: ac3)"
-      echo "  -d, --device          Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, mac) (default: auto)"
+      echo "  -d, --device          Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, apple), amd, nvidia, intel, apple (default: auto)"
+      echo "  -di, --device-idx     (ADVANCED) Set device index: 0 starting, must be an int corresponding to device set. Allows multiple GPUs of same vendor to be used. (default: 0)"
       echo "  -v, --log-level       Set/Flag the log level: quiet, panic, fatal, error, warning, info, verbose, debug, trace  (default: fatal)"
       echo "  -bp, --bit-pixel-format  Set bit pixel format: 8, 10, 12, keep  (default: keep)"
       echo "  -abm, --audio-bitrate-method  Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
@@ -742,30 +792,6 @@ else
 
 fi
 
-# PLATFORM
-case "$OSTYPE" in
-  darwin*)
-    GPU=$(system_profiler SPDisplaysDataType | grep -i "chipset")
-    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
-    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
-    ;;
-  linux*)
-    GPU=$(lspci | grep -i --color 'vga\|3d\|2d')
-    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
-    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
-    ;;
-  msys*)
-    # GPU=$(wmic path win32_VideoController get caption)
-    GPU=$(lspci | grep -i --color 'vga\|3d\|2d')
-    AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
-    AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
-    ;;
-  *)
-    echo "Unknown platform: $OSTYPE"
-    ;;
-esac
-
-
 # Quality
 case "$PRESET" in
     l|low)
@@ -795,10 +821,12 @@ case "$PRESET" in
     ;;
 esac
 
+# Use device and gpu setting to select transcoding pipeline.
+GPU=""
+echo $DEVICE $GPU
+get_device $OSTYPE $DEVICE $DEVICE_IDX GPU
+echo $DEVICE $GPU
 
-if [[ ${DEVICE:l} == "auto" ]]; then
-  get_device
-fi
 
 counter=1
 for F in $FILES; do

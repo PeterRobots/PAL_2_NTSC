@@ -8,12 +8,14 @@ kanban-plugin: board
 
 - [ ] CBR qsv
 - [ ] CBR apple
+- [ ] find (platform specific) device path for chosen renderer
 
 
 ## In progress
 
 - [ ] CBR nvenc
 - [ ] tune encoders for better compression
+- [ ] add device index selection
 
 
 ## Testing
