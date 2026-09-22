@@ -500,6 +500,24 @@ get_pix_fmt() {
   local ARGS
   local FILTER
 
+  if [[ ! $PIX_BITS =~ ^[0-9]+$ ]]; then
+    case "${PIX_FMT:l}" in
+        p*8*|i*|nv1*|yuv*p)
+          PIX_BITS=8
+        ;;
+        p*10*|*p10*)
+          PIX_BITS=10
+        ;;
+        p*12*|*p12*)
+          PIX_BITS=12
+        ;;
+        *)
+        echo "No pixel bit depth found and unrecognised pixel format: $PIX_FMT"
+        exit 2
+        ;;
+    esac
+  fi
+
   case "$DEVICE" in
     cpu)
       ARGS=(-pix_fmt $PIX_FMT)
@@ -688,7 +706,7 @@ while [[ $# -gt 0 ]]; do
       echo "  -bp, --bit-pixel-format  Set bit pixel format: 8, 10, 12, keep  (default: keep)"
       echo "  -abm, --audio-bitrate-method  Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
       echo "  -vbm, --video-bitrate-method  Set video bitrate method: cbr|constant, vbr|variable  (default: vbr)"
-      echo "  -sl, --subtitle-language  Set preferred subtitle language: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
+      echo "  -sl, --subtitle-language  Set preferred subtitle language: keep, none or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
       echo "  -al, --audio-language Set preferred audio language: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
       echo "  -alo, --audio-language-only    Flag to keep only preferred audio language stream"
       echo "  -sbo, --subtitle-language-only Flag to keep only preferred subtitle language stream"
@@ -882,24 +900,6 @@ for F in $FILES; do
   if [[ $PIX_FMT == "keep" ]]; then
     PIX_FMT=$F_V_PIX_FMT
     PIX_BITS=$F_V_PIX_BITS
-  fi
-
-  if [[ ! $PIX_BITS =~ ^[0-9]+$ ]]; then
-    case "${PIX_FMT:l}" in
-        p*8*|i*|nv1*|yuv*p)
-          PIX_BITS=8
-        ;;
-        p*10*|*p10*)
-          PIX_BITS=10
-        ;;
-        p*12*|*p12*)
-          PIX_BITS=12
-        ;;
-        *)
-        echo "No pixel bit depth found and unrecognised pixel format: $PIX_FMT"
-        exit 2
-        ;;
-    esac
   fi
 
   # Get BITS, FORMAT, PIX_FMT_ARGS, PIX_FMT_FILTERS
