@@ -1,9 +1,9 @@
 # Requirements
-- Tested on `mac` and `linux`, untested on `windows`.
+- Tested on `mac` and `linux`, `windows (wsl)` #untested.
 - `ZSH`
 - `ffmpeg`
     - (mac/linux/wsl) (brew) you can install a fullfat ffmpeg with: `brew install ffmpeg-full`
-    - (windows) (chocolatey) you can install ffmpeg with chocolatey: `choco install ffmpeg-full`
+    - (windows) (chocolatey) #untested you can install ffmpeg with chocolatey: `choco install ffmpeg-full`
     - Or download an appropriate version from ffmpeg: https://ffmpeg.org/download.html
         - Ensure appropriate libraries for your intended use (H264, H265, AV1, hardware acceleration...)
         - Check your installed ffmpeg output with: `ffmpeg` in your terminal.        
@@ -35,6 +35,27 @@ GPU: M1 (videotoolbox)
 
 Example: `./fix_video_format.zsh -i bad_pal_video.mkv -t pal -p medium -d gpu -v -o fixed_pal_video.mkv`
 
+# Presets
+1) Low
+	- Some quality loss compared to source
+	- Smallest file size (aiming for `~0.3X` compression)
+2) Medium
+	- Slight loss of quality compared to source
+	- Reasonable file size (`~0.5X` compression)
+3) High
+	- Intended to visually lossless compared to source
+	- Some compression compared to source (`~0.9X` compression)
+4) Keep
+# Audio
+I've aimed to minimise codec choice on quality with the presets, but there will be some variation. Additionally not all codecs offer all features, some do not offer `vbr` or `7.1` surround.
+
+Variable rate (`vbr`) will be more efficient than Constant (`cbr`), but may not playback as well on older devices (more computationally demanding).
+## Video
+Similarly to audio I aimed to minimise the effect of codec choice on the video quality where possible. Like with audio, not all codecs or hardware accelerated methods are equal and there will be some variation in quality.
+
+The settings were gathered more piecemeal compared to the audio, and I've tried tomatch my presets to the encoders presets.
+
+
 # Explanation
 Years ago I wanted a solution for fixing badly converted PAL/NTSC DVDs. This started me on a journey to learn how to use ffmpeg and various libraries and filters in order to achieve that.
 This project is the culmination of that and it's evolved into a larger framework that includes encoding/decoding options and tries to streamline using ffmpeg for those less familiar.
@@ -45,7 +66,10 @@ A) Yes and if you want features not supported by this program I encourage you to
 Q) handbrake? 
 A) 100% and I encourage you to try it, it's feature rich, has cli and gui interaction, and is open sourced (hurray!). I skipped straight to ffmpeg years ago and didn't really investigate it until very recently. 
 
-I justify this project as a wrapper for ffmpeg to simplify the for setting up a simple routine to fix, deinterlace and encode a wide selection of DVDs and Blurays in a user friendly consistently 'good' way. 
+Q) https://github.com/staxrip/staxrip
+A) If you use windows it looks like a great option
+
+I justify this project accessible script for fixing badly converted region formatted media with streamlined encoding options.
 ### Options
 The first choice is whether you want to use software `cpu` method or some kind of hardware accelerated method.
 
@@ -68,6 +92,7 @@ You can still aim for smaller files with a lower quality preset or use `cpu` for
 	- Supports a range of nvidia gpus, codec support will be limited on older gpus
 	- Decoding: H.264, HEVC, MJPEG, MPEG-1/2/4, VP8/VP9, VC-1, AV1
 	- Encoding: `all`
+		- https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvenc-application-note/index.html
 	- Filters:  scale, deinterlace
 - `intel` with `qsv`  https://trac.ffmpeg.org/wiki/Hardware/QuickSync
 	- Supports a range of intel chips, codec support will be limited on older gpus or igpus
@@ -101,22 +126,3 @@ There's three stages where cpu or hardware acceleration comes into play, dependi
 	- `cpu`
 	- Hardware accelerated
 		- Aim of equivalence in quality with `cpu`, but faster (YMMV)
-# Examples
-VA-API example of transcope with deinterlace (intel/amd option)
-https://trac.ffmpeg.org/wiki/Hardware/VAAPI
-  ```sh
-  ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi -i input.mp4 -vf 'deinterlace_vaapi=rate=field:auto=1' -c:v hevc_vaapi -b:v 5M output.mp4
-  ```
- 
- H264 qsv decode + h264 qsv encode with 5Mbps using ICQ && Look_ahead mode (similar to x264 crf)
- https://trac.ffmpeg.org/wiki/Hardware/QuickSync
-```sh
-ffmpeg -hwaccel qsv -c:v h264_qsv -i input.mp4 -vf 'vpp_qsv=deinterlace=2' -c:v h264_qsv -global_quality 25 -look_ahead 1 output.mp4
-```
-# To Do
-- Better autodetection of pal/ntsc
-    - Compare file lengths to online databases?
-- Test:
-    - Windows
-    - Intel gpu
-- Upscaling options
