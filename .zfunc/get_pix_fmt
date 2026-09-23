@@ -27,7 +27,7 @@ fi
 
 case "$DEVICE" in
     cpu)
-    ARGS=(-pix_fmt $PIX_FMT)
+    ARGS=(-pix_fmt "${PIX_FMT}")
     FILTER=(format=$PIX_FMT)
     ;;
     gpu)
@@ -115,4 +115,4 @@ case "$DEVICE" in
 esac
 
 typeset -g "$OUTPUT_FILTER"="$FILTER"
-typeset -g "$OUTPUT_ARGS"="$ARGS"
+set -A "$OUTPUT_ARGS" "${ARGS[@]}"
