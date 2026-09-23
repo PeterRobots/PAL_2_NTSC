@@ -32,7 +32,7 @@ esac
 # Extract gpu name if it matches supported GPUs, return lowercase array
 # Lower case
 GPUS=( ${(L)GPUS} )
-GPUS=( ${(M)GPUS[(r)${(j:|:)SUPPORTED_GPUS}]} )
+GPUS=( ${GPUS:*SUPPORTED_GPUS} )
 echo "Compatible hardware accelerators found: ${GPUS[@]}"
 # Primary GPU
 GPU="${GPU:l}"
@@ -44,20 +44,18 @@ GPU=${(M)GPU[(r)${(j:|:)SUPPORTED_GPUS}]}
 echo "Primary gpu is: "$GPU
 DEVICE=${DEVICE:l}
 
-if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]] && [[ ! -z $GPU ]]; then
-    DEVICE="gpu"
-    # Check if DEVICE is specified to an active, supported gpu
+if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]]; then
+    if [[ ! -z $GPU ]]; then
+        DEVICE="gpu"
+    else
+        DEVICE="cpu"
+    fi
+# Check if DEVICE is specified to an active, supported gpu
 elif [[ "$DEVICE" == (${~${(j:|:)GPUS}}) ]]; then
     GPU="$DEVICE"
     DEVICE="gpu"
-fi
-# If no match to gpu on auto setting, use cpu
-if [[ $DEVICE == "auto" ]]; then
-    DEVICE="cpu"
-fi
-
-if [[ -z $GPU && $DEVICE != "cpu" ]]; then
-    echo "Device is gpu, but none found: $DEVICE"
+else
+    echo "Device is specified, but none found: $DEVICE"
     exit 2
 fi
 
