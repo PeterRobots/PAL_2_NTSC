@@ -214,11 +214,7 @@ case "$PRESET" in
 esac
 
 # Use device and gpu setting to select transcoding pipeline.
-GPU=""
-echo $DEVICE $GPU
 get_device $OSTYPE $DEVICE $DEVICE_IDX GPU
-echo $DEVICE $GPU
-
 
 counter=1
 for F in $FILES; do
