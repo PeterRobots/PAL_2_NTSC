@@ -248,14 +248,13 @@ for F in $FILES; do
 
   echo "Resampling audio and video"
   STREAMS=("${(fu)$(ffprobe -hide_banner -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $F)}")
-  echo "Streams found:" $STREAMS
 
   if (( ${STREAMS[(Ie)audio]} )); then
-    echo "Audio found"
+    echo "Audio stream found"
   fi
 
   if (( ${STREAMS[(Ie)video]} )); then
-    echo "Video found"
+    echo "Video stream found"
   fi
 
   # Audio
@@ -385,7 +384,7 @@ for F in $FILES; do
   fi
   # Subtitles
   if (( ${STREAMS[(Ie)subtitle]} )); then
-    echo "subtitle found"
+    echo "Subtitle stream found"
     if [[ $S_LANGUAGE != "keep" ]]; then
       if $S_LANGUAGE_ONLY; then
         MAP_ARGS+=(-map s:m:language:$S_LANGUAGE)

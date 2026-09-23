@@ -12,14 +12,14 @@ case "$OSTYPE" in
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
     linux*)
-        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d'))
+        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d\|display'))
         GPU=$(glxinfo | grep -E "OpenGL renderer")
         AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
     msys*) # WSL 2.0 only
         # GPU=$(wmic path win32_VideoController get caption)
-        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d'))
+        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d\|display'))
         GPU=$(glxinfo | grep -E "OpenGL renderer")
         AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
@@ -33,6 +33,7 @@ esac
 # Lower case
 GPUS=( ${(L)GPUS} )
 GPUS=( ${(M)GPUS[(r)${(j:|:)SUPPORTED_GPUS}]} )
+echo "Compatible hardware accelerators found: ${GPUS[@]}"
 # Primary GPU
 GPU="${GPU:l}"
 # clean up string symbols
