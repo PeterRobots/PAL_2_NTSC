@@ -1,0 +1,32 @@
+local PRESET_ARR="$1"
+local OUTPUT=$2
+local DEVICE_VALUE
+local local_arr=(${${(P)PRESET_ARR}[@]})
+
+case "$DEVICE" in
+    cpu)
+    DEVICE_VALUE=$local_arr[1]
+    ;;
+    gpu)
+    case "$GPU" in
+        nvidia)
+        DEVICE_VALUE=$local_arr[2]
+        ;;
+        amd)
+        DEVICE_VALUE=$local_arr[3]
+        ;;
+        intel)
+        DEVICE_VALUE=$local_arr[4]
+        ;;
+        apple)
+        DEVICE_VALUE=$local_arr[5]
+        ;;
+    esac
+    ;;
+    *)
+    echo "Unknown device: $DEVICE"
+    exit 2
+    ;;
+esac
+
+typeset -g "$OUTPUT"="$DEVICE_VALUE"

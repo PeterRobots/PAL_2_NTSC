@@ -1,0 +1,16 @@
+local NUM_CHANNELS=$2
+local MAX_BIT_RATE=$3
+local MIN_BIT_RATE=$4
+local OUTPUT=$5
+# Low to High order
+get_preset_values $1 A_BIT_RATE_PER_CHANNEL
+# echo "Bit rate: " $A_BIT_RATE_PER_CHANNEL
+COUNT_CHANNELS=0
+# echo "Number of channels: " $NUM_CHANNELS
+for n in ${(s:.:)NUM_CHANNELS}; do
+COUNT_CHANNELS=$((COUNT_CHANNELS + n))
+done
+BIT_RATE=$(( COUNT_CHANNELS * A_BIT_RATE_PER_CHANNEL ))
+BIT_RATE=$(( BIT_RATE < MIN_BIT_RATE ? MIN_BIT_RATE : (BIT_RATE > MAX_BIT_RATE ? MAX_BIT_RATE : BIT_RATE) ))
+# echo "Channel info: " $NUM_CHANNELS $COUNT_CHANNELS $A_BIT_RATE_PER_CHANNEL $BIT_RATE
+typeset -g "$OUTPUT"=""$BIT_RATE"k"
