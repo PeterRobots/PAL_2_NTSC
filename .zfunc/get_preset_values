@@ -1,0 +1,24 @@
+local PRESET_ARR="$1"
+local OUTPUT=$2
+local PRESET_VALUE
+local local_arr=(${${(P)PRESET_ARR}[@]})
+# echo "All elements: ${${(P)PRESET_ARR}[@]}"
+# echo "1st element: ${${(P)PRESET_ARR}[1]}"
+# echo "1st element: $local_arr[1]"
+case "$PRESET" in
+  l|low)
+    PRESET_VALUE=$local_arr[1]
+  ;;
+  m|medium)
+    PRESET_VALUE=$local_arr[2]
+  ;;
+  h|high)
+    PRESET_VALUE=$local_arr[3]
+  ;;
+  *)
+    echo "Unknown preset level $PRESET"
+    exit 2
+  ;;
+esac
+typeset -g "$OUTPUT"="$PRESET_VALUE"
+

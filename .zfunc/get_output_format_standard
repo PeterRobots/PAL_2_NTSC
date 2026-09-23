@@ -1,0 +1,22 @@
+case "$OUTPUT_FORMAT_STANDARD" in
+    ntsc)
+    CORRECT_FPS_FILTER="fps=fps=ntsc"
+    CORRECT_FPS=$NTSC_FRAMERATE
+    ;;
+    ntsc_film)
+    CORRECT_FPS_FILTER="fps=fps=ntsc_film"
+    CORRECT_FPS=$NTSC_FILM_FRAMERATE
+    ;;
+    pal)
+    CORRECT_FPS_FILTER="fps=fps=pal"
+    CORRECT_FPS=$PAL_FRAMERATE
+    ;;
+    keep)
+    CORRECT_FPS_FILTER="fps=fps=source_fps"
+    CORRECT_FPS=$F_V_FPS
+    ;;
+    *)
+    echo "Unknown fix-type $OUTPUT_FORMAT_STANDARD"
+    exit 2
+    ;;
+esac

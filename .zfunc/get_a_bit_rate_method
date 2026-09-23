@@ -1,0 +1,15 @@
+local A_VBR_ARGS=$1
+local A_CBR_ARGS=$2
+local OUTPUT=$2
+case "$A_BIT_RATE_METHOD" in
+    vbr|variable)
+        A_BITRATE_ARGS=$A_VBR_ARGS
+        ;;
+    cbr|constant)
+        A_BITRATE_ARGS=$A_CBR_ARGS
+        ;;
+    *)
+        echo "Unknown Audio bitrate method: $A_BIT_RATE_METHOD"
+        ;;
+esac
+typeset -g "$OUTPUT"=$A_BITRATE_ARGS

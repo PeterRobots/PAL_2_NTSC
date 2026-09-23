@@ -1,0 +1,118 @@
+local PIX_BITS="$1"
+local PIX_FMT="$2"
+local OUTPUT_ARGS=$3
+local OUTPUT_FILTER=$4
+# CPU, NVENC, AMF, QSV, APPLE
+local CHROMA
+local ARGS
+local FILTER
+
+if [[ ! $PIX_BITS =~ ^[0-9]+$ ]]; then
+    case "${PIX_FMT:l}" in
+        p*8*|i*|nv1*|yuv*p)
+        PIX_BITS=8
+        ;;
+        p*10*|*p10*)
+        PIX_BITS=10
+        ;;
+        p*12*|*p12*)
+        PIX_BITS=12
+        ;;
+        *)
+        echo "No pixel bit depth found and unrecognised pixel format: $PIX_FMT"
+        exit 2
+        ;;
+    esac
+fi
+
+case "$DEVICE" in
+    cpu)
+    ARGS=(-pix_fmt $PIX_FMT)
+    FILTER=(format=$PIX_FMT)
+    ;;
+    gpu)
+    # Compare against basic gpu support format list
+    if [[ ! "$PIX_FMT" == (${~${(j:|:)SUPPORTED_GPU_PIX_FMTS}}) ]]; then
+        case "$PIX_FMT" in
+        nv24|yuv444*)
+            case "$PIX_BITS" in
+            8)
+                PIX_FMT="nv24"
+            ;;
+            10)
+                PIX_FMT="yuv444p10le"
+            ;;
+            12)
+                # 12 isn't supported widely on gpus
+                PIX_FMT="yuv444p10le"
+            ;;
+            *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+            ;;
+            esac
+        ;;
+        nv16|yuv422*)
+            case "$PIX_BITS" in
+            8)
+                PIX_FMT="nv16"
+            ;;
+            10)
+                PIX_FMT="p210le"
+            ;;
+            12)
+                # 12 isn't supported widely on gpus
+                PIX_FMT="p212le"
+            ;;
+            *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+            ;;
+            esac
+        ;;
+        p*|nv12|yuv420*)
+            case "$PIX_BITS" in
+            8)
+                PIX_FMT="nv12"
+            ;;
+            10)
+                PIX_FMT="p010le"
+            ;;
+            12)
+                PIX_FMT="p012le"
+            ;;
+            *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+            ;;
+            esac
+        ;;
+        *)
+            echo "Unknown pixel format, defaulting to 420 formats."
+            case "$PIX_BITS" in
+            8)
+                PIX_FMT="nv12"
+            ;;
+            10)
+                PIX_FMT="p010le"
+            ;;
+            12)
+                # 12 isn't support widely on gpus
+                PIX_FMT="p012le"
+            ;;
+            *)
+                echo "Unknown bit pixel depth: $PIX_BITS"
+                exit 2
+            ;;
+            esac
+        ;;
+        esac
+    fi
+    ARGS=()
+    local FILTERS=(format=$PIX_FMT scale_cuda=format=$PIX_FMT format=$PIX_FMT scale_qsv=format=$PIX_FMT hwdownload,format=$PIX_FMT)
+    select_on_device FILTERS FILTER
+    ;;
+esac
+
+typeset -g "$OUTPUT_FILTER"="$FILTER"
+typeset -g "$OUTPUT_ARGS"="$ARGS"

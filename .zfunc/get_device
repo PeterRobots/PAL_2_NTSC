@@ -1,0 +1,63 @@
+local OSTYPE="$1"
+DEVICE=$2
+DEVICE_IDX=$3
+local GPU_OUTPUT=$4
+
+# PLATFORM
+case "$OSTYPE" in
+    darwin*)
+        GPU=$(system_profiler SPDisplaysDataType | grep -i "chipset")
+        GPUS=($P_GPU)
+        AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+        AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
+    ;;
+    linux*)
+        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d'))
+        GPU=$(glxinfo | grep -E "OpenGL renderer")
+        AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+        AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
+    ;;
+    msys*) # WSL 2.0 only
+        # GPU=$(wmic path win32_VideoController get caption)
+        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d'))
+        GPU=$(glxinfo | grep -E "OpenGL renderer")
+        AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
+        AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
+    ;;
+    *)
+        echo "Unknown platform: $OSTYPE"
+    ;;
+esac
+
+# Extract gpu name if it matches supported GPUs, return lowercase array
+# Lower case
+GPUS=( ${(L)GPUS} )
+GPUS=( ${(M)GPUS[(r)${(j:|:)SUPPORTED_GPUS}]} )
+# Primary GPU
+GPU="${GPU:l}"
+# clean up string symbols
+GPU="${GPU//[^[:alnum:][:space:]]/}"
+# Convert to array for array intersection, I couldn't get string matching to work
+GPU=(${(s: :)GPU})
+GPU=${(M)GPU[(r)${(j:|:)SUPPORTED_GPUS}]}
+echo "Primary gpu is: "$GPU
+DEVICE=${DEVICE:l}
+
+if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]] && [[ ! -z $GPU ]]; then
+    DEVICE="gpu"
+    # Check if DEVICE is specified to an active, supported gpu
+elif [[ "$DEVICE" == (${~${(j:|:)GPUS}}) ]]; then
+    GPU="$DEVICE"
+    DEVICE="gpu"
+fi
+# If no match to gpu on auto setting, use cpu
+if [[ $DEVICE == "auto" ]]; then
+    DEVICE="cpu"
+fi
+
+if [[ -z $GPU && $DEVICE != "cpu" ]]; then
+    echo "Device is gpu, but none found: $DEVICE"
+    exit 2
+fi
+
+typeset -g "$GPU_OUTPUT"="$GPU"
