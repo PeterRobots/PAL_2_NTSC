@@ -28,7 +28,6 @@ FORCE=false
 PITCH_SHIFT=true
 
 # Constants
-readonly SUPPORTED_GPUS=("nvidia" "amd" "intel" "apple")
 readonly SUPPORTED_GPU_PIX_FMTS=("nv1*" "nv2*" "p010*" "p210" "p210*" "yuv444p" "bgr0" "bgra" "rgb0" "rgba")
 readonly DVD_WIDTH=720
 # PAL
@@ -333,7 +332,7 @@ for F in $FILES; do
     DEINTERLACE_FILTER_ARR+="bwdif_cuda=mode=0"
     # AMD VULKAN
     # Only deinterlace marked fields
-    DEINTERLACE_FILTER_ARR+="hwmap=derive_device=vulkan,format=vulkan,bwdif_vulkan=mode=send_frame"
+    DEINTERLACE_FILTER_ARR+="hwmap=derive_device=vulkan,format=vulkan,bwdif_vulkan=mode=send_frame,format=amf"
     # INTEL QSV
     # 2 is advanced motion-adaptive, 1 is bob weaver
     DEINTERLACE_FILTER_ARR+="vpp_qsv=deinterlace=2"

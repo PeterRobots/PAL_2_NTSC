@@ -2,6 +2,7 @@ local OSTYPE="$1"
 DEVICE=$2
 DEVICE_IDX=$3
 local GPU_OUTPUT=$4
+local readonly SUPPORTED_GPUS=("nvidia" "amd" "intel" "apple")
 
 # PLATFORM
 case "$OSTYPE" in
@@ -32,7 +33,14 @@ esac
 # Extract gpu name if it matches supported GPUs, return lowercase array
 # Lower case
 GPUS=( ${(L)GPUS} )
-GPUS=( ${GPUS:*SUPPORTED_GPUS} )
+FOUND_GPUS=()
+for G in $SUPPORTED_GPUS; do
+    if [[ ${(j:|:)GPUS} =~ $G ]]; then
+        FOUND_GPUS+=($G)
+    fi
+done
+# GPUS=( ${GPUS:*SUPPORTED_GPUS} )
+GPUS=$FOUND_GPUS
 echo "Compatible hardware accelerators found: ${GPUS[@]}"
 # Primary GPU
 GPU="${GPU:l}"
@@ -51,7 +59,7 @@ if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]]; then
         DEVICE="cpu"
     fi
 # Check if DEVICE is specified to an active, supported gpu
-elif [[ "$DEVICE" == (${~${(j:|:)GPUS}}) ]]; then
+elif [[ ${(j:|:)GPUS} =~ $DEVICE ]]; then
     GPU="$DEVICE"
     DEVICE="gpu"
 else

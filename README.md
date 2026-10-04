@@ -2,7 +2,7 @@
 - Tested on `mac` and `linux`
 - Untested `windows (wsl)`
 - `ZSH`
-- `ffmpeg`
+- `ffmpeg` `>-9.0`
     - (mac/linux/wsl) (brew) you can install a fullfat ffmpeg with: `brew install ffmpeg-full`
     - (windows) (chocolatey) #untested you can install ffmpeg with chocolatey: `choco install ffmpeg-full`
     - Or download an appropriate version from ffmpeg: https://ffmpeg.org/download.html
