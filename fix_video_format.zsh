@@ -234,12 +234,12 @@ for F in $FILES; do
   F_CHAPTERS="${OUTPUT%.*}_chapters.txt"
   F_SUBTITLES="${OUTPUT%.*}_subtitles.$F_CONTAINER"
   OUTPUT_DIR=${OUTPUT:h}
-  LOG_DIR="$OUTPUT_DIR/Logs"
+  # LOG_DIR="$OUTPUT_DIR/Logs"
 
   if [[ ! -d $OUTPUT_DIR ]]; then
     mkdir -p $OUTPUT_DIR
   fi
-  mkdir -p $LOG_DIR
+  # mkdir -p $LOG_DIR
 
   echo "Resampling audio and video"
   STREAMS=("${(fu)$(ffprobe -hide_banner -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $F)}")
