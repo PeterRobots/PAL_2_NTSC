@@ -5,7 +5,7 @@ zmodload zsh/mathfunc
 local CWD="${0:A:h}"
 fpath=("$CWD/.zfunc" $fpath)
 # Autoload all functions in that directory
-autoload -Uz ./.zfunc/*(:t)
+autoload -Uz $fpath/*(:t)
 
 INPUT=""
 OUTPUT=""
