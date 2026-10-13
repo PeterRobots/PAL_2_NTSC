@@ -7,7 +7,11 @@ fpath=("$CWD/.zfunc" $fpath)
 # Autoload all functions in that directory
 autoload -Uz ./.zfunc/*(:t)
 # Load language codes
-LANGUAGE_CODES_FILE="$CWD/language_iso_639.csv"
+LANGUAGE_CODES_FILE="$CWD/languages_iso_639.csv"
+ALLOWED_LANGUAGES=($(awk -F"\t" '{print $1}' $LANGUAGE_CODES_FILE))
+# Remove the first elemnet (header)
+shift ALLOWED_LANGUAGES
+
 
 INPUT=""
 OUTPUT=""
@@ -114,7 +118,7 @@ while [[ $# -gt 0 ]]; do
     ;;
     -kls|--keep-list-subtitle)
       S_LANGUAGES_SELECTED="$2"
-      shift 1
+      shift 2
     ;;
     -al|--audio-language)
       A_LANGUAGE="$2"
@@ -122,7 +126,7 @@ while [[ $# -gt 0 ]]; do
     ;;
     -kla|--keep-list-audio)
       A_LANGUAGES_SELECTED="$2"
-      shift 1
+      shift 2
     ;;
     -nd|--no-deinterlace)
       DEINTERLACE=false
@@ -138,24 +142,24 @@ while [[ $# -gt 0 ]]; do
     ;;
     --help)
       echo "Usage: $0 [options]"
-      echo "  -i                    Set input and container type"
-      echo "  -o,                   Set output file, path and container (default </Processed/<input_file>)"
-      echo "  -p, --preset          Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed, k|keep  (default: medium)"
-      echo "  -ofs, --output-format-standard   Set correct output format standard: keep, pal, ntsc_film, ntsc  (default: keep)"
-      echo "  -cv, --video-codec    Set video codec: keep (maintain input codec), h266|vvc, h265|hevc, h264|avc, vp9, av1, ffv1|lossless (default: h264)"
-      echo "  -ca, --audio-codec    Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac ; Legacy: mp3 (default: ac3)"
-      echo "  -d, --device          Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, apple), amd, nvidia, intel, apple (default: auto)"
-      echo "  -di, --device-idx     (ADVANCED) Set device index: 0 starting, must be an int corresponding to device set. Allows multiple GPUs of same vendor to be used. (default: 0)"
-      echo "  -v, --log-level       Set/Flag the log level: quiet, panic, fatal, error, warning, info, verbose, debug, trace  (default: fatal)"
-      echo "  -bp, --bit-pixel-format  Set bit pixel format: 8, 10, 12, keep  (default: keep)"
-      echo "  -abm, --audio-bitrate-method  Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
-      echo "  -vbm, --video-bitrate-method  Set video bitrate method: cbr|constant, vbr|variable  (default: vbr)"
-      echo "  -sl, --subtitle-language  Set preferred subtitle language: keep, none or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
-      echo "  -al, --audio-language Set preferred audio language: keep or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
-      echo "  -alo, --keep-list-audio    String list (delimiter=',') of languages (ISO-639-2/B) to keep for audio e.g. 'eng,fra,ger' (default: all)"
-      echo "  -sbo, --keep-list-subtitle Flag to keep only preferred subtitle language stream e.g. 'eng,fra,ger' (default: all)"
-      echo "  -nd, --no-deinterlace      Flag no deinterlace"
-      echo "  -nps, --no-pitch-shift Flag for preventing pitch shifting audio"
+      echo "  -i                                Set input and container type"
+      echo "  -o,                               Set output file, path and container (default </Processed/<input_file>)"
+      echo "  -p, --preset                      Set quality (higher quality = lower compression) preset: l|low, m|medium, h|high, u|uncompressed, k|keep  (default: medium)"
+      echo "  -ofs, --output-format-standard    Set correct output format standard: keep, pal, ntsc_film, ntsc  (default: keep)"
+      echo "  -cv, --video-codec                Set video codec: keep (maintain input codec), h266|vvc, h265|hevc, h264|avc, vp9, av1, ffv1|lossless (default: h264)"
+      echo "  -ca, --audio-codec                Set audio codec: keep (maintain input codec), HQ: aac, ac3|dolby, eac3|dolbyplus, opus, vorbis ; Lossless: lpcm|pcm|none, flac, alac ; Legacy: mp3 (default: ac3)"
+      echo "  -d, --device                      Set device: auto (gpu with cpu fallback), cpu, gpu (autodetect: amd, nvidia, intel, apple), amd, nvidia, intel, apple (default: auto)"
+      echo "  -di, --device-idx                 (ADVANCED) Set device index: 0 starting, must be an int corresponding to device set. Allows multiple GPUs of same vendor to be used. (default: 0)"
+      echo "  -v, --log-level                   Set/Flag the log level: quiet, panic, fatal, error, warning, info, verbose, debug, trace  (default: fatal)"
+      echo "  -bp, --bit-pixel-format           Set bit pixel format: 8, 10, 12, keep  (default: keep)"
+      echo "  -abm, --audio-bitrate-method      Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
+      echo "  -vbm, --video-bitrate-method      Set video bitrate method: cbr|constant, vbr|variable  (default: vbr)"
+      echo "  -sl, --subtitle-language          Set preferred subtitle language: keep, none or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
+      echo "  -al, --audio-language             Set preferred audio language: keep or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
+      echo "  -kla, --keep-list-audio           String list (delimiter=',') of languages (ISO-639-2/B) to keep for audio e.g. 'eng,fre' (default: all)"
+      echo "  -kls, --keep-list-subtitle        String list (delimiter=',') of languages (ISO-639-2/B) to keep for subtitles e.g. 'eng,fre' (default: all)"
+      echo "  -nd, --no-deinterlace             Flag no deinterlace"
+      echo "  -nps, --no-pitch-shift            Flag for preventing pitch shifting audio"
       exit 0
     ;;
     *)
@@ -267,13 +271,6 @@ for F in $FILES; do
   F_A_BITRATE=$A_FFPROBE_DICT[bit_rate]
   F_A_CHANNELS=$A_FFPROBE_DICT[channels]
   F_A_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams a -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $F))
-  F_A_LANGUAGES_MATCHED=()
-  for lang in $F_A_LANGUAGES; do
-    matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
-    if [[ ! -z $matched_lang ]]; then
-      F_A_LANGUAGES_MATCHED+=($matched_lang)
-    fi
-  done
 
   # Video
   typeset -A V_FFPROBE_DICT
@@ -384,8 +381,15 @@ for F in $FILES; do
 
   if [[ $A_LANGUAGES_SELECTED != "all" ]]; then
       A_LANGUAGES=()
-      get_languages A_LANGUAGES_SELECTED F_A_LANGUAGES_MATCHED A_LANGUAGES
-      MAP_ARGS+=(-map a:m:language:$^A_LANGUAGES)
+      A_LANGUAGES_SELECTED=(${(s[,])A_LANGUAGES_SELECTED})
+      if [[ ${A_LANGUAGES_SELECTED[(r)$A_LANGUAGE]} != $A_LANGUAGE && $A_LANGUAGE != "keep" ]]; then
+        A_LANGUAGES_SELECTED+=(${A_LANGUAGE})
+      fi
+      get_languages A_LANGUAGES_SELECTED F_A_LANGUAGES A_LANGUAGES
+      echo $A_LANGUAGES
+      for lang in $A_LANGUAGES; do
+        MAP_ARGS+=(-map a:m:language:$lang)
+      done
   else
     MAP_ARGS+=(-map 0:a)
   fi
@@ -394,7 +398,7 @@ for F in $FILES; do
     echo "Subtitle stream found"
     F_S_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams s -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $F))
     F_S_CODEC=$(ffprobe -hide_banner -v error -select_streams s:0 -show_entries streams=codec_name -of default=noprint_wrappers=1:nokey=1 $F)
-    echo -e "Subtitle probe results:\n" $F_S_LANGUAGES $F_S_CODEC
+    # echo -e "Subtitle probe results:\n" $F_S_LANGUAGES $F_S_CODEC
 
     if [[ $S_LANGUAGE != "keep" ]]; then
         DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
@@ -402,8 +406,15 @@ for F in $FILES; do
 
     if [[ $S_LANGUAGES_SELECTED != "all" ]]; then
       S_LANGUAGES=()
-      get_languages S_LANGUAGES_SELECTED F_S_LANGUAGES_MATCHED S_LANGUAGES
-      MAP_ARGS+=(-map s:m:language:$^S_LANGUAGES)
+      S_LANGUAGES_SELECTED=(${(s[,])S_LANGUAGES_SELECTED})
+      if [[ ${S_LANGUAGES_SELECTED[(r)$S_LANGUAGE]} != $S_LANGUAGE && $S_LANGUAGE != "keep" && $S_LANGUAGE != "none" ]]; then
+        S_LANGUAGES_SELECTED+=(${S_LANGUAGE})
+      fi
+      get_languages S_LANGUAGES_SELECTED F_S_LANGUAGES S_LANGUAGES
+      echo $S_LANGUAGES
+      for lang in $S_LANGUAGES; do
+        MAP_ARGS+=(-map s:m:language:$lang)
+      done
       S_ENCODE_ARGS=(-c:s $F_S_CODEC)
     else
       MAP_ARGS+=(-map 0:s)

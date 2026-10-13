@@ -9,12 +9,12 @@ O_C_H264="$F_DIR/Processed/${F_NAME}_CPU_H264.$F_CONTAINER"
 O_C_H265="$F_DIR/Processed/${F_NAME}_CPU_H265.$F_CONTAINER"
 O_I_H264="$F_DIR/Processed/${F_NAME}_QSV_H264.$F_CONTAINER"
 O_I_H265="$F_DIR/Processed/${F_NAME}_QSV_H265.$F_CONTAINER"
-./fix_video_format.zsh -i $1 -cv h264 -d nvidia -al eng -sl none -p medium -ofs ntsc_film -o $O_N_H264
-./fix_video_format.zsh -i $1 -cv h265 -d nvidia -al eng -sl none -p medium -ofs ntsc_film -o $O_N_H265
-./fix_video_format.zsh -i $1 -cv h264 -d cpu -al eng -sl none -p medium -ofs ntsc_film -o $O_C_H264
-./fix_video_format.zsh -i $1 -cv h265 -d cpu -al eng -sl none -p medium -ofs ntsc_film -o $O_C_H265
-./fix_video_format.zsh -i $1 -cv h264 -d intel -al eng -sl none -p medium -ofs ntsc_film -o $O_I_H264
-./fix_video_format.zsh -i $1 -cv h265 -d intel -al eng -sl none -p medium -ofs ntsc_film -o $O_I_H265
+./fix_video_format.zsh -i $1 -cv h264 -d nvidia -al eng -sl none -kla eng,fra -kls eng,fra -p medium -ofs ntsc_film -o $O_N_H264
+# ./fix_video_format.zsh -i $1 -cv h265 -d nvidia -al eng -sl none -p medium -ofs ntsc_film -o $O_N_H265
+# ./fix_video_format.zsh -i $1 -cv h264 -d cpu -al eng -sl none -p medium -ofs ntsc_film -o $O_C_H264
+# ./fix_video_format.zsh -i $1 -cv h265 -d cpu -al eng -sl none -p medium -ofs ntsc_film -o $O_C_H265
+# ./fix_video_format.zsh -i $1 -cv h264 -d intel -al eng -sl none -p medium -ofs ntsc_film -o $O_I_H264
+# ./fix_video_format.zsh -i $1 -cv h265 -d intel -al eng -sl none -p medium -ofs ntsc_film -o $O_I_H265
 
 OUTPUT_ARR=($O_N_H264 $O_N_H265 $O_C_H264 $O_C_H265 $O_I_H264 $O_I_H265)
 
