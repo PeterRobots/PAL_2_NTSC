@@ -21,4 +21,7 @@
 # ffprobe -v error -select_streams v:0 -show_entries packet $1
 # STREAMS=("${(f)$(ffprobe -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $1)}")
 # bits_per_raw_sample
-ffprobe -v error -show_streams -select_streams V:0 -of default $1
+# ffprobe -v error -show_streams -select_streams a:0 -of default $1
+# ffprobe -hide_banner -v error -select_streams s -of default=noprint_wrappers=1 $1
+F_A_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams a -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $1))
+echo $F_A_LANGUAGES

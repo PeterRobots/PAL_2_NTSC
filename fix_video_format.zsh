@@ -6,6 +6,8 @@ local CWD="${0:A:h}"
 fpath=("$CWD/.zfunc" $fpath)
 # Autoload all functions in that directory
 autoload -Uz ./.zfunc/*(:t)
+# Load language codes
+LANGUAGE_CODES_FILE="$CWD/language_iso_639.csv"
 
 INPUT=""
 OUTPUT=""
@@ -16,9 +18,9 @@ PRESET="medium"
 V_CODEC="h264"
 A_CODEC="ac3"
 A_LANGUAGE="keep"
-A_LANGUAGE_ONLY=false
+A_LANGUAGE_LIST='all'
 S_LANGUAGE="keep"
-S_LANGUAGE_ONLY=false
+S_LANGUAGE_LIST='all'
 PIX_FMT="keep"
 OUTPUT_FORMAT_STANDARD="keep"
 A_BIT_RATE_METHOD="vbr"
@@ -110,16 +112,16 @@ while [[ $# -gt 0 ]]; do
       S_LANGUAGE="$2"
       shift 2
     ;;
-    -slo|--subtitle-language-only)
-      S_LANGUAGE_ONLY=true
+    -kls|--keep-list-subtitle)
+      S_LANGUAGE_LIST="$2"
       shift 1
     ;;
     -al|--audio-language)
       A_LANGUAGE="$2"
       shift 2
     ;;
-    -alo|--audio-language-only)
-      A_LANGUAGE_ONLY=true
+    -kla|--keep-list-audio)
+      A_LANGUAGE_LIST="$2"
       shift 1
     ;;
     -nd|--no-deinterlace)
@@ -148,10 +150,10 @@ while [[ $# -gt 0 ]]; do
       echo "  -bp, --bit-pixel-format  Set bit pixel format: 8, 10, 12, keep  (default: keep)"
       echo "  -abm, --audio-bitrate-method  Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
       echo "  -vbm, --video-bitrate-method  Set video bitrate method: cbr|constant, vbr|variable  (default: vbr)"
-      echo "  -sl, --subtitle-language  Set preferred subtitle language: keep, none or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
-      echo "  -al, --audio-language Set preferred audio language: keep or standard ffmpeg language stream identifier e.g. eng  (default: keep)"
-      echo "  -alo, --audio-language-only    Flag to keep only preferred audio language stream"
-      echo "  -sbo, --subtitle-language-only Flag to keep only preferred subtitle language stream"
+      echo "  -sl, --subtitle-language  Set preferred subtitle language: keep, none or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
+      echo "  -al, --audio-language Set preferred audio language: keep or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
+      echo "  -alo, --keep-list-audio    String list (delimiter=',') of languages (ISO-639-2/B) to keep for audio e.g. 'eng,fra,ger' (default: all)"
+      echo "  -sbo, --keep-list-subtitle Flag to keep only preferred subtitle language stream e.g. 'eng,fra,ger' (default: all)"
       echo "  -nd, --no-deinterlace      Flag no deinterlace"
       echo "  -nps, --no-pitch-shift Flag for preventing pitch shifting audio"
       exit 0
@@ -264,6 +266,14 @@ for F in $FILES; do
   F_A_SAMPLERATE=$A_FFPROBE_DICT[sample_rate]
   F_A_BITRATE=$A_FFPROBE_DICT[bit_rate]
   F_A_CHANNELS=$A_FFPROBE_DICT[channels]
+  F_A_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams a -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $F))
+  F_A_LANGUAGES_MATCH=()
+  for lang in $F_A_LANGUAGES; do
+    matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
+    if [[ ! -z $matched_lang ]]; then
+      F_A_LANGUAGES_MATCH+=($matched_lang)
+    fi
+  done
 
   # Video
   typeset -A V_FFPROBE_DICT
@@ -369,27 +379,45 @@ for F in $FILES; do
   DISPOSITION_ARGS=()
   # Audio
   if [[ $A_LANGUAGE != "keep" ]]; then
-    if $A_LANGUAGE_ONLY; then
-      MAP_ARGS+=(-map a:m:language:$A_LANGUAGE)
-    else
-      MAP_ARGS+=(-map 0:a)
       DISPOSITION_ARGS+=(-disposition:a:m:language:$A_LANGUAGE default -disposition:a:0 0)
-    fi
+  fi
+
+  if [[ $A_LANGUAGE_LIST != "all" ]]; then
+    for lang in ${=A_LANGUAGE_LIST}; do
+      matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
+      if [[ ! -z $matched_lang ]]; then
+        MAP_ARGS+=(-map a:m:language:$matched_lang)
+      fi
+    done
   else
     MAP_ARGS+=(-map 0:a)
   fi
   # Subtitles
   if (( ${STREAMS[(Ie)subtitle]} )); then
     echo "Subtitle stream found"
-    if [[ $S_LANGUAGE != "keep" ]]; then
-      if $S_LANGUAGE_ONLY; then
-        MAP_ARGS+=(-map s:m:language:$S_LANGUAGE)
-        S_ENCODE_ARGS=(-c:s copy)
-      else
-        MAP_ARGS+=(-map 0:s)
-        DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
-        S_ENCODE_ARGS=(-c:s copy)
+    F_S_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams s -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $F))
+    F_S_CODEC=$(ffprobe -hide_banner -v error -select_streams s:0 -show_entries streams=codec_name -of default=noprint_wrappers=1:nokey=1 $F)
+    echo -e "Subtitle probe results:\n" $F_S_LANGUAGES $F_S_CODEC
+
+    F_S_LANGUAGES_MATCH=()
+    for lang in ${=F_S_LANGUAGES}; do
+      matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
+      if [[ ! -z $matched_lang ]]; then
+        F_S_LANGUAGES_MATCH+=($matched_lang)
       fi
+    done
+    if [[ $S_LANGUAGE != "keep" ]]; then
+        DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
+    fi
+
+    if [[ $S_LANGUAGE_LIST != "all" ]]; then
+      for lang in ${=S_LANGUAGE_LIST}; do
+        matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
+        if [[ ! -z $matched_lang ]]; then
+          MAP_ARGS+=(-map s:m:language:$matched_lang)
+        fi
+      done
+      S_ENCODE_ARGS=(-c:s $F_S_CODEC)
     else
       MAP_ARGS+=(-map 0:s)
       S_ENCODE_ARGS=(-c:s copy)
