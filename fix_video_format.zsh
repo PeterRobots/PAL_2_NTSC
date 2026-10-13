@@ -154,8 +154,8 @@ while [[ $# -gt 0 ]]; do
       echo "  -bp, --bit-pixel-format           Set bit pixel format: 8, 10, 12, keep  (default: keep)"
       echo "  -abm, --audio-bitrate-method      Set audio bitrate method: cbr|constant, vbr|variable  (default: vbr)"
       echo "  -vbm, --video-bitrate-method      Set video bitrate method: cbr|constant, vbr|variable  (default: vbr)"
-      echo "  -sl, --subtitle-language          Set preferred subtitle language: keep, none or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
-      echo "  -al, --audio-language             Set preferred audio language: keep or standard ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
+      echo "  -sl, --default-subtitle-language  Set default subtitle language: keep, none or ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
+      echo "  -al, --default-audio-language     Set default audio language: keep or ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
       echo "  -kla, --keep-list-audio           String list (delimiter=',') of languages (ISO-639-2/B) to keep for audio e.g. 'eng,fre' (default: all)"
       echo "  -kls, --keep-list-subtitle        String list (delimiter=',') of languages (ISO-639-2/B) to keep for subtitles e.g. 'eng,fre' (default: all)"
       echo "  -nd, --no-deinterlace             Flag no deinterlace"
@@ -398,7 +398,7 @@ for F in $FILES; do
     echo "Subtitle stream found"
     F_S_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams s -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $F))
     F_S_CODEC=$(ffprobe -hide_banner -v error -select_streams s:0 -show_entries streams=codec_name -of default=noprint_wrappers=1:nokey=1 $F)
-    # echo -e "Subtitle probe results:\n" $F_S_LANGUAGES $F_S_CODEC
+    # echo -e "Subtitle probe results:\n" $F_S_CODEC
 
     if [[ $S_LANGUAGE != "keep" ]]; then
         DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
@@ -415,11 +415,10 @@ for F in $FILES; do
       for lang in $S_LANGUAGES; do
         MAP_ARGS+=(-map s:m:language:$lang)
       done
-      S_ENCODE_ARGS=(-c:s $F_S_CODEC)
     else
       MAP_ARGS+=(-map 0:s)
-      S_ENCODE_ARGS=(-c:s copy)
     fi
+    S_ENCODE_ARGS=(-c:s copy)
   fi
   # , delimiter for sub arguments
   VIDEO_FILTER="${(j[,])VIDEO_FILTER_ARR:#}"

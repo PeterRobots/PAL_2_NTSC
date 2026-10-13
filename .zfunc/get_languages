@@ -3,24 +3,24 @@ local TO_MATCH_LANGUAGES="$2"
 local OUTPUT=$3
 SUPPLIED_LANGUAGES=(${${(P)SUPPLIED_LANGUAGES}[@]})
 TO_MATCH_LANGUAGES=(${${(P)TO_MATCH_LANGUAGES}[@]})
-echo "Supplied Languages: "$SUPPLIED_LANGUAGES
-echo "To match: "$TO_MATCH_LANGUAGES
+# echo "Supplied Languages: "$SUPPLIED_LANGUAGES
+# echo "To match: "$TO_MATCH_LANGUAGES
 
 local OUTPUT_LANGUAGES=()
 for lang in $SUPPLIED_LANGUAGES; do
     # Find first match of language in 639-1, 639-2, 639-3, return 639-2 code (ffmpeg default)
     iso_langs=$(awk -F"\t" -v lang="$lang" '$1~lang || $2~lang || $3~lang || $5~lang {print $1, $2, $3, $5; exit}' $LANGUAGE_CODES_FILE)
     iso_langs=(${(s[ ])iso_langs})
-    echo $iso_langs
+    # echo $iso_langs
     # If language code is matched
     # if [[ ! -z $matched_lang && ${(M)matched_lang[(r)${(j:|:)TO_MATCH_LANGUAGES}]} ]]; then
     matched_lang=${(M)TO_MATCH_LANGUAGES[(r)${(j:|:)iso_langs}]}
-    echo $matched_lang
+    # echo $matched_lang
     if [[ ! -z $matched_lang ]]; then
         OUTPUT_LANGUAGES+=($matched_lang)
     fi
 done
 
-echo "Matched languages: " $OUTPUT_LANGUAGES
+# echo "Matched languages: " $OUTPUT_LANGUAGES
 # typeset -g "$OUTPUT"=$OUTPUT_LANGUAGES
 set -A "$OUTPUT" "${OUTPUT_LANGUAGES[@]}"

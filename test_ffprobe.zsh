@@ -26,5 +26,5 @@
 # F_A_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams a -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $1))
 # echo ${F_A_LANGUAGES[@]}
 
-F_S_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams s -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $1))
-echo ${F_S_LANGUAGES[@]}
+ffprobe -hide_banner -v error -select_streams s:0 -show_entries stream=codec_name -of default=noprint_wrappers=1 $1
+
