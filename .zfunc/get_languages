@@ -1,0 +1,17 @@
+local SUPPLIED_LANGUAGES="$1"
+local FOUND_LANGUAGES="$2"
+local OUTPUT=$3
+SUPPLIED_LANGUAGES=(${${(P)SUPPLIED_LANGUAGES}[@]})
+FOUND_LANGUAGES=(${${(P)FOUND_LANGUAGES}[@]})
+
+local OUTPUT_LANGUAGES=()
+for lang in $SUPPLIED_LANGUAGES; do
+# Find first match of language in 639-1, 639-2, 639-3, return 639-2 code (ffmpeg default)
+matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1; exit}' $LANGUAGE_CODES_FILE)
+# If language code is matched
+if [[ ! -z $matched_lang && ${(M)matched_lang[(r)${(j:|:)FOUND_LANGUAGES}]} ]]; then
+    OUTPUT_LANGUAGES+=($matched_lang)
+fi
+done
+
+typeset -g "$OUTPUT"="$OUTPUT_LANGUAGES"

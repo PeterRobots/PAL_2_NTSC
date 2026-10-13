@@ -18,9 +18,9 @@ PRESET="medium"
 V_CODEC="h264"
 A_CODEC="ac3"
 A_LANGUAGE="keep"
-A_LANGUAGE_LIST='all'
+A_LANGUAGES_SELECTED='all'
 S_LANGUAGE="keep"
-S_LANGUAGE_LIST='all'
+S_LANGUAGES_SELECTED='all'
 PIX_FMT="keep"
 OUTPUT_FORMAT_STANDARD="keep"
 A_BIT_RATE_METHOD="vbr"
@@ -113,7 +113,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
     ;;
     -kls|--keep-list-subtitle)
-      S_LANGUAGE_LIST="$2"
+      S_LANGUAGES_SELECTED="$2"
       shift 1
     ;;
     -al|--audio-language)
@@ -121,7 +121,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
     ;;
     -kla|--keep-list-audio)
-      A_LANGUAGE_LIST="$2"
+      A_LANGUAGES_SELECTED="$2"
       shift 1
     ;;
     -nd|--no-deinterlace)
@@ -267,11 +267,11 @@ for F in $FILES; do
   F_A_BITRATE=$A_FFPROBE_DICT[bit_rate]
   F_A_CHANNELS=$A_FFPROBE_DICT[channels]
   F_A_LANGUAGES=($(ffprobe -hide_banner -v error -select_streams a -show_entries stream_tags=language -of default=noprint_wrappers=1:nokey=1 $F))
-  F_A_LANGUAGES_MATCH=()
+  F_A_LANGUAGES_MATCHED=()
   for lang in $F_A_LANGUAGES; do
     matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
     if [[ ! -z $matched_lang ]]; then
-      F_A_LANGUAGES_MATCH+=($matched_lang)
+      F_A_LANGUAGES_MATCHED+=($matched_lang)
     fi
   done
 
@@ -382,13 +382,10 @@ for F in $FILES; do
       DISPOSITION_ARGS+=(-disposition:a:m:language:$A_LANGUAGE default -disposition:a:0 0)
   fi
 
-  if [[ $A_LANGUAGE_LIST != "all" ]]; then
-    for lang in ${=A_LANGUAGE_LIST}; do
-      matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
-      if [[ ! -z $matched_lang ]]; then
-        MAP_ARGS+=(-map a:m:language:$matched_lang)
-      fi
-    done
+  if [[ $A_LANGUAGES_SELECTED != "all" ]]; then
+      A_LANGUAGES=()
+      get_languages A_LANGUAGES_SELECTED F_A_LANGUAGES_MATCHED A_LANGUAGES
+      MAP_ARGS+=(-map a:m:language:$^A_LANGUAGES)
   else
     MAP_ARGS+=(-map 0:a)
   fi
@@ -399,24 +396,14 @@ for F in $FILES; do
     F_S_CODEC=$(ffprobe -hide_banner -v error -select_streams s:0 -show_entries streams=codec_name -of default=noprint_wrappers=1:nokey=1 $F)
     echo -e "Subtitle probe results:\n" $F_S_LANGUAGES $F_S_CODEC
 
-    F_S_LANGUAGES_MATCH=()
-    for lang in ${=F_S_LANGUAGES}; do
-      matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
-      if [[ ! -z $matched_lang ]]; then
-        F_S_LANGUAGES_MATCH+=($matched_lang)
-      fi
-    done
     if [[ $S_LANGUAGE != "keep" ]]; then
         DISPOSITION_ARGS+=(-disposition:s:m:language:$S_LANGUAGE default -disposition:s:0 0)
     fi
 
-    if [[ $S_LANGUAGE_LIST != "all" ]]; then
-      for lang in ${=S_LANGUAGE_LIST}; do
-        matched_lang=$(awk -F'  ' '$1 == "$lang" || $2 == "$lang" || $4 == "$lang" {print $1}' $LANGUAGE_CODES_FILE)
-        if [[ ! -z $matched_lang ]]; then
-          MAP_ARGS+=(-map s:m:language:$matched_lang)
-        fi
-      done
+    if [[ $S_LANGUAGES_SELECTED != "all" ]]; then
+      S_LANGUAGES=()
+      get_languages S_LANGUAGES_SELECTED F_S_LANGUAGES_MATCHED S_LANGUAGES
+      MAP_ARGS+=(-map s:m:language:$^S_LANGUAGES)
       S_ENCODE_ARGS=(-c:s $F_S_CODEC)
     else
       MAP_ARGS+=(-map 0:s)
