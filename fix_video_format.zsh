@@ -220,7 +220,7 @@ case "$PRESET" in
 esac
 
 # Use device and gpu setting to select transcoding pipeline.
-get_device $OSTYPE $DEVICE $DEVICE_IDX GPU
+get_device $OSTYPE $DEVICE $DEVICE_IDX GPU DEVICE_IDX
 
 counter=1
 for F in $FILES; do
@@ -295,7 +295,6 @@ for F in $FILES; do
     fi
   done
   F_V_META_BIT_RATE=${(v)V_FFPROBE_DICT[(i)TAG:BPS*]}
-  echo "META BIT RATE BPS: " $F_V_META_BIT_RATE
   F_V_META_AVG_BIT_RATE=$V_FFPROBE_DICT[avg_bitrate]
   F_V_META_MAX_BIT_RATE=$V_FFPROBE_DICT[max_bitrate]
   F_V_META_BUFFER_SIZE=$V_FFPROBE_DICT[buffer_size]
@@ -385,7 +384,6 @@ for F in $FILES; do
         A_LANGUAGES_SELECTED+=(${A_LANGUAGE})
       fi
       get_languages A_LANGUAGES_SELECTED F_A_LANGUAGES A_LANGUAGES
-      echo $A_LANGUAGES
       for lang in $A_LANGUAGES; do
         MAP_ARGS+=(-map a:m:language:$lang)
       done
@@ -442,7 +440,7 @@ for F in $FILES; do
     A_CODEC=$F_A_CODEC
   fi
   get_a_encode_args $F_A_CHANNELS
-  get_v_encode_args
+  get_v_encode_args $GPU $DEVICE_IDX $DEVICE
 
 
     if [[ ! -e $OUTPUT ]] || $FORCE; then

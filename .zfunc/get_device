@@ -2,6 +2,7 @@ local OSTYPE="$1"
 DEVICE=$2
 DEVICE_IDX=$3
 local GPU_OUTPUT=$4
+local GPU_IDX_OUTPUT=$5
 
 # MAKE DEVICE LOWER
 DEVICE=${DEVICE:l}
@@ -35,15 +36,19 @@ esac
 # Extract gpu name if it matches supported GPUs, return lowercase array
 # Lower case
 GPUS=( ${(L)GPUS} )
-echo "Hardware accelerators found: ${GPUS[@]}"
+# echo "Hardware accelerators found: ${GPUS[@]}"
 # For each line in GPUS, return the SUPPORTED_GPU name that matched it
 COMPATIBLE_GPUS=()
+typeset -A GPU_IDX
 for gpu in $SUPPORTED_GPUS; do
-    if [[ ${GPUS[(r)*$gpu*]} ]]; then
+    idx=${GPUS[(i)*$gpu*]}
+    match=${GPUS[(r)*$gpu*]}
+    if [[ $match ]]; then
         COMPATIBLE_GPUS+=($gpu)
+        GPU_IDX[$gpu]=$idx
     fi
 done
-echo "Compatible hardware accelerators found: ${COMPATIBLE_GPUS[@]}"
+echo "Compatible Hardware Accelerators found: ${(kv)GPU_IDX}"
 # Primary GPU
 GPU="${GPU:l}"
 # clean up string symbols
@@ -51,7 +56,7 @@ GPU="${GPU//[^[:alnum:][:space:]]/}"
 # Convert to array for array intersection, I couldn't get string matching to work
 GPU=(${(s: :)GPU})
 GPU=${(M)GPU[(r)${(j:|:)SUPPORTED_GPUS}]}
-echo "Primary gpu is: "$GPU
+# echo "Primary Hardware Accelerator is: "$GPU
 
 if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]]; then
     if [[ ! -z $GPU ]]; then
@@ -70,4 +75,8 @@ else
     exit 2
 fi
 
+echo "Selected Device:" $DEVICE
+echo "Selected Hardware Accelerator: " $GPU
+
 typeset -g "$GPU_OUTPUT"="$GPU"
+typeset -g "$GPU_IDX_OUTPUT"="$GPU_IDX[$GPU]"
