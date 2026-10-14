@@ -17,7 +17,7 @@ for P in $PRESETS; do
     O_A_H264="$F_DIR/Processed/${F_NAME}_${P}_AMF_H264.$F_CONTAINER"
     O_A_H265="$F_DIR/Processed/${F_NAME}_${P}_AMF_H265.$F_CONTAINER"
 
-    COMMON_ARGS=(-i "$1" -al eng -sl none -kla eng,fra -kls eng,fra -p "$P" -ofs ntsc_film -v)
+    COMMON_ARGS=(-i "$1" -al eng -sl none -kla eng,fra -kls eng,fra -p "$P" -ofs ntsc_film)
 
     ./fix_video_format.zsh $COMMON_ARGS -cv h264 -d nvidia -o $O_N_H264
     ./fix_video_format.zsh $COMMON_ARGS -cv h265 -d nvidia -o $O_N_H265

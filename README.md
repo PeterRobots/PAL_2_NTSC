@@ -126,3 +126,30 @@ There's three stages where cpu or hardware acceleration comes into play, dependi
 	- `cpu`
 	- Hardware accelerated
 		- Aim of equivalence in quality with `cpu`, but faster (YMMV)
+		
+### Functionality
+[x] `nvidia`
+[-] `amd`
+[x] `apple`
+[x] `intel`
+[x] `software`
+
+`amd` is proving difficult to implement, to use `amf` and `vulkan` in combination requires a very recent `ffmpeg>=9.0`, `amd` software and driver stack. This is unintentionally bleeding edge. 
+
+#### AMD
+The AMD drivers and software situation on linux is a bit rough.
+https://repo.radeon.com/amdgpu/6.3.4/ubuntu/dists/noble/proprietary/binary-amd64/Packages
+You need amf, amdenc, vulkan
+https://amdgpu-install.readthedocs.io/en/latest/
+The following command in theory corresponds to `All-Open Variant` with `Pro` `vulkan`, but those are deprecated naming schemes.
+`amdgpu-install -y --usecase=graphics,amf --vulkan=radv`
+
+I need to test on a ubuntu/rhel container.
+
+# Metrics
+I've chosen to compare my presets and methods using vmaf 1.0.16_3d0h which corresponds to 1080p at standard tv viewing.
+I used ffmpeg 9.0 for the tests, a clip of 20 seconds generated with make_clip.zsh. I used a DVD of a badly converted pal episode of DS9 for the clip, there is caveats to this: it's DVD resolution and it needs to be converted to 10bit color for the test. At lower than 1080p it's not ideal for the test, but usable.
+
+This section will contain images and graphs comparing `vmaf` and various motion, pixel and color metrics compared to a lossless `ffv1` encode of the clip.
+
+I also plan to do a bluray version with comparison to raw rip.
