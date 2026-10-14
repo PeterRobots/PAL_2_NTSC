@@ -246,7 +246,6 @@ for F in $FILES; do
   if [[ ! -d $OUTPUT_DIR ]]; then
     mkdir -p $OUTPUT_DIR
   fi
-  mkdir -p $LOG_DIR
 
   echo "Resampling audio and video"
   STREAMS=("${(fu)$(ffprobe -hide_banner -v error -show_entries stream=codec_type -of default=noprint_wrappers=1:nokey=1 $F)}")

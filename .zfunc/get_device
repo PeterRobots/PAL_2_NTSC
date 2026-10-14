@@ -3,6 +3,9 @@ DEVICE=$2
 DEVICE_IDX=$3
 local GPU_OUTPUT=$4
 
+# MAKE DEVICE LOWER
+DEVICE=${DEVICE:l}
+
 # PLATFORM
 case "$OSTYPE" in
     darwin*)
@@ -12,14 +15,16 @@ case "$OSTYPE" in
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
     linux*)
-        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d\|display'))
+        # GPUS=($(lspci | grep -i 'vga\|3d\|2d\|display'))
+        GPUS=("${(f)$(lspci | grep -i 'vga\|3d\|2d\|display')}")
         GPU=$(glxinfo | grep -E "OpenGL renderer")
         AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
     msys*) # WSL 2.0 only
         # GPU=$(wmic path win32_VideoController get caption)
-        GPUS=($(lspci | grep -i --color 'vga\|3d\|2d\|display'))
+        # GPUS=($(lspci | grep -i 'vga\|3d\|2d\|display'))
+        GPUS=("${(f)$(lspci | grep -i 'vga\|3d\|2d\|display' | awk -v GPUS="${(j:|:)SUPPORTED_GPUS}" 'match($0, /.*(GPUS).*/, arr) {print arr[1]}')}")
         GPU=$(glxinfo | grep -E "OpenGL renderer")
         AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
@@ -32,7 +37,9 @@ esac
 # Extract gpu name if it matches supported GPUs, return lowercase array
 # Lower case
 GPUS=( ${(L)GPUS} )
-GPUS=( ${GPUS:*SUPPORTED_GPUS} )
+echo "Hardware accelerators found: ${GPUS[@]}"
+# GPUS=( ${GPUS:*SUPPORTED_GPUS} )
+GPUS=( ${SUPPORTED_GPUS:#GPUS} )
 echo "Compatible hardware accelerators found: ${GPUS[@]}"
 # Primary GPU
 GPU="${GPU:l}"
@@ -42,7 +49,6 @@ GPU="${GPU//[^[:alnum:][:space:]]/}"
 GPU=(${(s: :)GPU})
 GPU=${(M)GPU[(r)${(j:|:)SUPPORTED_GPUS}]}
 echo "Primary gpu is: "$GPU
-DEVICE=${DEVICE:l}
 
 if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]]; then
     if [[ ! -z $GPU ]]; then
@@ -54,8 +60,10 @@ if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]]; then
 elif [[ "$DEVICE" == (${~${(j:|:)GPUS}}) ]]; then
     GPU="$DEVICE"
     DEVICE="gpu"
+elif [[ $DEVICE == "cpu" ]]; then
+    DEVICE="cpu"
 else
-    echo "Device is specified, but none found: $DEVICE"
+    echo "ERROR: Device is specified, but none found: $DEVICE"
     exit 2
 fi
 
