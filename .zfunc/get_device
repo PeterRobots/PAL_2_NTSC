@@ -15,7 +15,6 @@ case "$OSTYPE" in
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
     ;;
     linux*)
-        # GPUS=($(lspci | grep -i 'vga\|3d\|2d\|display'))
         GPUS=("${(f)$(lspci | grep -i 'vga\|3d\|2d\|display')}")
         GPU=$(glxinfo | grep -E "OpenGL renderer")
         AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
@@ -23,8 +22,7 @@ case "$OSTYPE" in
     ;;
     msys*) # WSL 2.0 only
         # GPU=$(wmic path win32_VideoController get caption)
-        # GPUS=($(lspci | grep -i 'vga\|3d\|2d\|display'))
-        GPUS=("${(f)$(lspci | grep -i 'vga\|3d\|2d\|display' | awk -v GPUS="${(j:|:)SUPPORTED_GPUS}" 'match($0, /.*(GPUS).*/, arr) {print arr[1]}')}")
+        GPUS=("${(f)$(lspci | grep -i 'vga\|3d\|2d\|display')}")
         GPU=$(glxinfo | grep -E "OpenGL renderer")
         AVAILABLE_A_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*A.*/ && $2 ~ /\w+/ {print $2}')}")
         AVAILABLE_V_CODECS=("${(f)$(ffmpeg -hide_banner -codecs | awk '$1 ~ /.*V.*/ && $2 ~ /\w+/ {print $2}')}")
@@ -38,9 +36,14 @@ esac
 # Lower case
 GPUS=( ${(L)GPUS} )
 echo "Hardware accelerators found: ${GPUS[@]}"
-# GPUS=( ${GPUS:*SUPPORTED_GPUS} )
-GPUS=( ${SUPPORTED_GPUS:#GPUS} )
-echo "Compatible hardware accelerators found: ${GPUS[@]}"
+# For each line in GPUS, return the SUPPORTED_GPU name that matched it
+COMPATIBLE_GPUS=()
+for gpu in $SUPPORTED_GPUS; do
+    if [[ ${GPUS[(r)*$gpu*]} ]]; then
+        COMPATIBLE_GPUS+=($gpu)
+    fi
+done
+echo "Compatible hardware accelerators found: ${COMPATIBLE_GPUS[@]}"
 # Primary GPU
 GPU="${GPU:l}"
 # clean up string symbols
@@ -57,7 +60,7 @@ if [[ $DEVICE == "auto" || $DEVICE == "gpu" ]]; then
         DEVICE="cpu"
     fi
 # Check if DEVICE is specified to an active, supported gpu
-elif [[ "$DEVICE" == (${~${(j:|:)GPUS}}) ]]; then
+elif [[ "$DEVICE" == (${~${(j:|:)COMPATIBLE_GPUS}}) ]]; then
     GPU="$DEVICE"
     DEVICE="gpu"
 elif [[ $DEVICE == "cpu" ]]; then
