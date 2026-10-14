@@ -39,8 +39,6 @@ echo $O_REF
 
 for O in $OUTPUT_ARR; do
     if [[ -f $O ]]; then
-        # ./test_psnr.zsh $O $1
-        # ./test_psnr.zsh $O $O_REF
         ./test_vmaf.zsh $O $O_REF
     fi
 done
