@@ -12,6 +12,7 @@ ALLOWED_LANGUAGES=($(awk -F"\t" '{print $1}' $LANGUAGE_CODES_FILE))
 # Remove the first elemnet (header)
 shift ALLOWED_LANGUAGES
 
+# set -euo pipefail
 
 INPUT=""
 OUTPUT=""
@@ -30,8 +31,12 @@ OUTPUT_FORMAT_STANDARD="keep"
 A_BIT_RATE_METHOD="vbr"
 V_BIT_RATE_METHOD="vbr"
 DEINTERLACE=true
+DENOISE=true
 FORCE=false
 PITCH_SHIFT=true
+DENOISE_SCALE=10.0
+DENOISE_RESEARCH_SIZES=(15 21 25)
+DENOISE_PATCH_SIZES=(7 9 11)
 
 # Constants
 readonly SUPPORTED_GPUS=("nvidia" "amd" "intel" "apple")
@@ -128,8 +133,12 @@ while [[ $# -gt 0 ]]; do
       A_LANGUAGES_SELECTED="$2"
       shift 2
     ;;
-    -nd|--no-deinterlace)
+    -ndi|--no-deinterlace)
       DEINTERLACE=false
+      shift 1
+    ;;
+    -ndn|--no-denoise)
+      DENOISE=false
       shift 1
     ;;
     -nps|--no-pitch-shift)
@@ -158,7 +167,8 @@ while [[ $# -gt 0 ]]; do
       echo "  -al, --default-audio-language     Set default audio language: keep or ffmpeg language (ISO-639-2/B) stream identifier e.g. eng  (default: keep)"
       echo "  -kla, --keep-list-audio           String list (delimiter=',') of languages (ISO-639-2/B) to keep for audio e.g. 'eng,fre' (default: all)"
       echo "  -kls, --keep-list-subtitle        String list (delimiter=',') of languages (ISO-639-2/B) to keep for subtitles e.g. 'eng,fre' (default: all)"
-      echo "  -nd, --no-deinterlace             Flag no deinterlace"
+      echo "  -ndi, --no-deinterlace            Flag no deinterlace"
+      echo "  -ndn, --no-denoise                Flag no denoise"
       echo "  -nps, --no-pitch-shift            Flag for preventing pitch shifting audio"
       exit 0
     ;;
@@ -330,23 +340,7 @@ for F in $FILES; do
   FRAMERATE_ARGS=()
   # Add pixel filter first
   VIDEO_FILTER_ARR+=($PIX_FMT_FILTER)
-  if $DEINTERLACE && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
-    DEINTERLACE_FILTER_ARR=()
-    # CPU
-    DEINTERLACE_FILTER_ARR+="bwdif=mode=send_frame"
-    # NVIDIA CUDA
-    DEINTERLACE_FILTER_ARR+="bwdif_cuda=mode=0"
-    # AMD VULKAN
-    # Only deinterlace marked fields
-    DEINTERLACE_FILTER_ARR+="hwmap=derive_device=vulkan,format=vulkan,bwdif_vulkan=mode=send_frame"
-    # INTEL QSV
-    # 2 is advanced motion-adaptive, 1 is bob weaver
-    DEINTERLACE_FILTER_ARR+="vpp_qsv=deinterlace=2"
-    # APPLE (CPU)
-    DEINTERLACE_FILTER_ARR+="bwdif=mode=send_frame,hwupload=videotoolbox"
-    select_on_device DEINTERLACE_FILTER_ARR DEINTERLACE_FILTER
-    VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
-  fi
+
   # CORRECT_FPS and CORRECT_FPS_FILTER
   get_output_format_standard
   if [[ $OUTPUT_FORMAT_STANDARD:l != "keep" ]]; then
@@ -368,6 +362,70 @@ for F in $FILES; do
   else
     FRAMERATE_ARGS+=(-fps_mode passthrough)
   fi
+
+  # Deinterlace filters
+  if $DEINTERLACE && [[ $F_V_FIELD_ORDER!="progressive" ]]; then
+    DEINTERLACE_FILTER_ARR=()
+    # CPU
+    DEINTERLACE_FILTER_ARR+="bwdif=mode=send_frame"
+    # NVIDIA CUDA
+    DEINTERLACE_FILTER_ARR+="bwdif_cuda=mode=0"
+    # AMD VULKAN
+    # Only deinterlace marked fields
+    DEINTERLACE_FILTER_ARR+="hwmap=derive_device=vulkan,format=vulkan,bwdif_vulkan=mode=send_frame"
+    # INTEL QSV
+    # 2 is advanced motion-adaptive, 1 is bob weaver
+    DEINTERLACE_FILTER_ARR+="vpp_qsv=deinterlace=2"
+    # APPLE (CPU)
+    DEINTERLACE_FILTER_ARR+="bwdif=mode=send_frame,hwupload=videotoolbox"
+    select_on_device DEINTERLACE_FILTER_ARR DEINTERLACE_FILTER
+    VIDEO_FILTER_ARR+=($DEINTERLACE_FILTER)
+  else
+    DEINTERLACE=false
+  fi
+
+  # Denoise filters
+  # -filter_complex "hwmap=derive_device=vulkan,scale_vulkan=1920:1080,hwmap=derive_device=cuda"
+  get_noise F_V_NOISE $F $PIX_BITS
+  echo "overall noise: " $F_V_NOISE[all]
+  if $DENOISE && (( $F_V_NOISE[all]>=0.05 )); then
+    get_preset_values DENOISE_RESEARCH_SIZES DN_RESEARCH_SIZE
+    get_preset_values DENOISE_PATCH_SIZES DN_PATCH_SIZE
+    # Weak strength, the noise value should be between 0 - 1.0
+    # nlmeans indexing for specific values is avuy (alpha, chroma_v, chroma_u, luminance)
+    # CPU nlmeans strength is 1.0 - 30.0
+    clamp $(( F_V_NOISE[all] * DENOISE_SCALE/3.0 + 1.0 )) 1.0 30.0 DN_STRENGTH
+    # Vulkan can take avuy values 0.0 - 100.0
+    clamp $(( F_V_NOISE[y] * DENOISE_SCALE )) 0.0 100.0 DN_Y_STRENGTH
+    clamp $(( F_V_NOISE[u] * DENOISE_SCALE )) 0.0 100.0 DN_U_STRENGTH
+    clamp $(( F_V_NOISE[v] * DENOISE_SCALE )) 0.0 100.0 DN_V_STRENGTH
+    echo "Denoise strength: all=${DN_STRENGTH} y=${DN_Y_STRENGTH} u=${DN_U_STRENGTH} v=${DN_V_STRENGTH}"
+    # DN_VULKAN_FILTER="nlmeans_vulkan=s1=${DN_V_STRENGTH}:s2=${DN_U_STRENGTH}:s3=${DN_Y_STRENGTH}:r=${DN_RESEARCH_SIZE}:p=${DN_PATCH_SIZE}"
+    DN_VULKAN_FILTER="nlmeans_vulkan"
+    DENOISE_FILTER_ARR=()
+    # CPU
+    DENOISE_FILTER_ARR+="nlmeans=s=${DN_STRENGTH}:p=${DN_PATCH_SIZE}:r=${DN_RESEARCH_SIZE}"
+    # NVIDIA CUDA
+    DENOISE_FILTER_ARR+="hwupload=derive_device=vulkan,$DN_VULKAN_FILTER,hwupload=derive_device=cuda"
+    # AMD VULKAN
+    if $DEINTERLACE; then
+      DENOISE_FILTER_ARR+="$DN_VULKAN_FILTER,hwmap=derive_device=amf"
+    else
+      DENOISE_FILTER_ARR+="hwmap=derive_device=vulkan,format=vulkan,$DN_VULKAN_FILTER,hwmap=derive_device=amf"
+    fi
+    # INTEL QSV
+    DENOISE_FILTER_ARR+="hwmap=derive_device=vulkan,$DN_VULKAN_FILTER,hwmap=derive_device=qsv"
+    # APPLE (CPU)
+    DENOISE_FILTER_ARR+="nlmeans"
+    select_on_device DENOISE_FILTER_ARR DENOISE_FILTER
+    VIDEO_FILTER_ARR+=($DENOISE_FILTER)
+  else
+    DENOISE=false
+    if $DEINTERLACE && [[ $GPU=="amd" ]]; then
+      VIDEO_FILTER_ARR+=("hwmap=derive_device=amf")
+    fi
+  fi
+
   # MAP ARGS
   # Video
   MAP_ARGS=(-map 0:v)

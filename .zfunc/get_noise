@@ -1,0 +1,75 @@
+# convert_metadata <global_name> <media_file> <num_bits>
+#
+# Extract ffmpeg bitplanenoise metadata (metadata=mode=print) from <media_file>
+# and reduce it to the overall arithmetic means, published into the associative
+# array named <global_name> in the caller's global scope:
+#
+#   overall=([y]=".." [u]=".." [v]=".." [all]="..")
+#
+# y/u/v are the arithmetic mean of each channel across every bit and frame;
+# `all` is the arithmetic mean across all three channels combined.
+#
+# The function prints nothing. Source this file to define it, then call it:
+#
+#   source convert_metadata.zsh
+#   convert_metadata overall B1_t00_clip.mkv 8
+#   print $overall[y]        # -> 0.142640795
+#
+# <global_name> is created (as an associative array) in global scope.
+
+# Validate arguments first (fail clearly on a missing arg, before set -u).
+local name=${1-} input=${2-} bits=${3-}
+if [[ -z $name || -z $input || -z $bits ]]; then
+    print "convert_metadata: usage: convert_metadata <global_name> <media_file> <num_bits>" >&2
+    return 2
+fi
+
+# Build the bitplanenoise filter chain for $bits bitplanes:
+#   1) split the input into $bits copies,
+#   2) run bitplanenoise=bitplane=i on each, tagging metadata=mode=print,
+#   3) hstack the copies back into a single pad.
+local vf="split=outputs=${bits}" bp="" stack="" i
+for ((i=1; i<=bits; i++)); do
+    vf+="[split$i]"
+    bp+="[split$i]bitplanenoise=bitplane=${i},metadata=mode=print[split$i]; "
+    stack="[split$i]${stack}"
+done
+vf="${vf}; ${bp}${stack}hstack=inputs=${bits}[out]"
+
+# Overall per-channel mean. ffmpeg writes the metadata=mode=print stream to
+# stderr, so it is piped in via 2>&1. Each channel value is a line of the form
+#   lavfi.bitplanenoise.<plane>.<bit>=<value>
+# We keep only "<plane>|<value>" and let awk sum each channel (0=y, 1=u, 2=v)
+# and emit the overall arithmetic means as a zsh assoc-array literal named $name.
+# Each plane's values are summed and divided by that plane's count to get the
+# per-channel mean (no frame/bit grid, so nothing is dropped and the result is
+# deterministic -- the metadata itself is). `all` is the arithmetic mean of the
+# three channel means.
+local literal
+literal="$(
+    while IFS= read -r line || [ -n "$line" ]; do
+    # Drop the ffmpeg log prefix "[Parsed_metadata_N @ 0x...]" when present.
+    [[ $line == \[*\]* ]] && line=${line#*\] }
+    case "$line" in
+        lavfi.bitplanenoise.*)
+        # lavfi.bitplanenoise.0.1=0.433092  ->  plane 0, value 0.433092
+        key="${line%%=*}"
+        rest="${key#lavfi.bitplanenoise.}"   # <plane>.<bit>
+        print -r -- "${rest%%.*}|${line#*=}"
+        ;;
+    esac
+    done < <(ffmpeg -hide_banner -t 10 -i "$input" -an -sn -vf "$vf" -f null - 2>&1) \
+    | awk -F'|' -v n="$name" '
+    { s[$1] += $2 + 0; cnt[$1]++ }
+    END {
+        my = s[0]/cnt[0]; mu = s[1]/cnt[1]; mv = s[2]/cnt[2]
+        printf "%s=([y]=\"%.9g\" [u]=\"%.9g\" [v]=\"%.9g\" [all]=\"%.9g\")\n", n, my, mu, mv, (my+mu+mv)/3
+    }
+    '
+)"
+
+# Publish the array into the caller's global scope by name. This zsh build has
+# no nameref support (`typeset -n`), so we declare the named global associative
+# array and eval the literal into it.
+typeset -gA "$name"
+eval "$literal"

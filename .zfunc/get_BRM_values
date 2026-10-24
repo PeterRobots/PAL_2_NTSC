@@ -3,7 +3,7 @@ local RATE_ARR="$2"
 local OUTPUT=$3
 local RATE_VALUE
 local local_arr=(${${(P)RATE_ARR}[@]})
-echo "All elements: $local_arr $RATE_ARR"
+# echo "All elements: $local_arr $RATE_ARR"
 # echo "1st element: ${${(P)PRESET_ARR}[1]}"
 # echo "1st element: $local_arr[1]"
 case "$BRM" in
@@ -22,3 +22,4 @@ cbr)
 esac
 # set -A "$OUTPUT" "${RATE_VALUE[@]}"
 typeset -g "$OUTPUT"="$RATE_VALUE"
+

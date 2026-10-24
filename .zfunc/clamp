@@ -1,0 +1,4 @@
+local OUTPUT=$4
+VALUE=$(awk -v v="$1" -v lo="$2" -v hi="$3" \
+'BEGIN { print (v < lo ? lo : (v > hi ? hi : v)) }')
+typeset -g "$OUTPUT"="$VALUE"

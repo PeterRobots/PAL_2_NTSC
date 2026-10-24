@@ -4,6 +4,17 @@ local DEVICE=$3
 
 V_ENCODE_ARGS=(-c:v)
 V_ENCODE_ARGS_COMMON=(-b:v $AVG_BIT_RATE -maxrate:v $MAX_BIT_RATE -bufsize:v $BUFFER_SIZE)
+# Parameters
+B_FRAMES=3
+TEMPORAL_AQ=true
+SPATIAL_AQ=true
+LOOK_AHEAD_DEPTH=40
+PREANALYSIS=true
+PREENCODE=true
+G=120
+MOTION_BOOST=true
+
+
 case "$DEVICE" in
     cpu)
     CPU_PRESETS=("fast" "medium" "slow")
@@ -50,28 +61,37 @@ case "$DEVICE" in
     esac
     ;;
     gpu)
+    # I might initialise vulkan device and map cuda to vulkan for nlmeans denoising for better compression.
+    # ffmpeg -hwaccel nvdec -hwaccel_output_format cuda -i input.mp4 -init_hw_device vulkan=vk -filter_hw_device vk -filter_complex "hwmap=derive_device=vulkan,scale_vulkan=1920:1080,hwmap=derive_device=cuda" -c:v h264_nvenc output.mp4
+    VK_DEVICE="vk:$(( DEVICE_IDX - 1 ))"
+    VK_INIT_ARGS=(-init_hw_device vulkan=$VK_DEVICE)
     case "$GPU" in
         nvidia)
-            HW_DECODE_ARGS=(-hwaccel cuda -hwaccel_output_format cuda)
+            # HW_DECODE_ARGS=($VK_INIT_ARGS -init_hw_device cuda=cuda@vk -hwaccel cuda -hwaccel_output_format cuda -filter_hw_device cuda)
+            HW_DECODE_ARGS=(-init_hw_device cuda=cuda -hwaccel cuda -hwaccel_output_format cuda -filter_hw_device cuda)
             # HW_INIT_FILTER=""
             GPU_PRESETS=("p4" "p6" "p7")
-            CRF_ARGS=(-tune hq -rc vbr -cq $QUALITY $V_ENCODE_ARGS_COMMON -bf 1 -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
+            COMMON_VBR_ARGS=(-rc vbr -cq $QUALITY)
+            COMMON_CBR_ARGS=(-rc constqp -qp $QUALITY)
+            RATE_OPTIONS=(COMMON_VBR_ARGS COMMON_CBR_ARGS)
+            get_BRM_values $V_BIT_RATE_METHOD RATE_OPTIONS CRF_ARGS
+            V_ENCODE_ARGS_COMMON+=(-tune hq -rc-lookahead $LOOK_AHEAD_DEPTH -bf $B_FRAMES -b_ref_mode middle -spatial-aq 1 -temporal-aq 1)
             case "$V_CODEC" in
             h265|hevc)
                 get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY+1))
-                V_ENCODE_ARGS+=(hevc_nvenc -preset $V_PRESET_ARG $CRF_ARGS)
+                V_ENCODE_ARGS+=(hevc_nvenc -preset $V_PRESET_ARG $V_ENCODE_ARGS_COMMON ${(P)CRF_ARGS})
             ;;
             h264|avc)
                 # get_preset_values GPU_PRESETS V_PRESET_ARG
                 get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY-1))
-                V_ENCODE_ARGS+=(h264_nvenc -preset $V_PRESET_ARG $CRF_ARGS)
+                V_ENCODE_ARGS+=(h264_nvenc -preset $V_PRESET_ARG $V_ENCODE_ARGS_COMMON ${(P)CRF_ARGS})
             ;;
             av1)
                 get_preset_values GPU_PRESETS V_PRESET_ARG
                 QUALITY=$((QUALITY+1))
-                V_ENCODE_ARGS+=(av1_nvenc -preset $V_PRESET_ARG $CRF_ARGS)
+                V_ENCODE_ARGS+=(av1_nvenc -preset $V_PRESET_ARG $V_ENCODE_ARGS_COMMON ${(P)CRF_ARGS})
             ;;
             *)
                 echo "Unknown or unsupported Video codec for $GPU: $V_CODEC"
@@ -83,8 +103,7 @@ case "$DEVICE" in
         # ffmpeg -init_hw_device vulkan=vk:0 -init_hw_device amf=amf@vk:0 \
         # -hwaccel amf -hwaccel_output_format amf_surface \
         # -vf "hwmap=derive_device=vulkan,format=vulkan"
-        VK_DEVICE="vk:$(( DEVICE_IDX - 1 ))"
-        HW_DECODE_ARGS=(-init_hw_device vulkan=$VK_DEVICE -init_hw_device amf=amf@vk -hwaccel amf -hwaccel_output_format amf_surface)
+        HW_DECODE_ARGS=($VK_INIT_ARGS -init_hw_device amf=amf@vk -hwaccel amf -hwaccel_output_format amf_surface)
         # HW_DECODE_ARGS=(-init_hw_device "vulkan=vk:0" -hwaccel vulkan -hwaccel_output_format vulkan -filter_hw_device vk)
         # HW_INIT_FILTER="hwupload"
         GPU_PRESETS=("balanced" "quality" "high_quality")
