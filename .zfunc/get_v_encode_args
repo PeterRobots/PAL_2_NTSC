@@ -67,8 +67,8 @@ case "$DEVICE" in
     VK_INIT_ARGS=(-init_hw_device vulkan=$VK_DEVICE)
     case "$GPU" in
         nvidia)
-            # HW_DECODE_ARGS=($VK_INIT_ARGS -init_hw_device cuda=cuda@vk -hwaccel cuda -hwaccel_output_format cuda -filter_hw_device cuda)
-            HW_DECODE_ARGS=(-init_hw_device cuda=cuda -hwaccel cuda -hwaccel_output_format cuda -filter_hw_device cuda)
+            HW_DECODE_ARGS=($VK_INIT_ARGS -init_hw_device cuda=cuda@vk -hwaccel cuda -hwaccel_output_format cuda -filter_hw_device cuda)
+            # HW_DECODE_ARGS=(-init_hw_device cuda=cuda -hwaccel cuda -hwaccel_output_format cuda -filter_hw_device cuda)
             # HW_INIT_FILTER=""
             GPU_PRESETS=("p4" "p6" "p7")
             COMMON_VBR_ARGS=(-rc vbr -cq $QUALITY)

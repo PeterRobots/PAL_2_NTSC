@@ -400,8 +400,8 @@ for F in $FILES; do
     clamp $(( F_V_NOISE[u] * DENOISE_SCALE )) 0.0 100.0 DN_U_STRENGTH
     clamp $(( F_V_NOISE[v] * DENOISE_SCALE )) 0.0 100.0 DN_V_STRENGTH
     echo "Denoise strength: all=${DN_STRENGTH} y=${DN_Y_STRENGTH} u=${DN_U_STRENGTH} v=${DN_V_STRENGTH}"
-    # DN_VULKAN_FILTER="nlmeans_vulkan=s1=${DN_V_STRENGTH}:s2=${DN_U_STRENGTH}:s3=${DN_Y_STRENGTH}:r=${DN_RESEARCH_SIZE}:p=${DN_PATCH_SIZE}"
-    DN_VULKAN_FILTER="nlmeans_vulkan"
+    DN_VULKAN_FILTER="nlmeans_vulkan=s1=${DN_V_STRENGTH}:s2=${DN_U_STRENGTH}:s3=${DN_Y_STRENGTH}:r=${DN_RESEARCH_SIZE}:p=${DN_PATCH_SIZE},libplacebo=w=1920:h=1080:force_original_aspect_ratio=decrease:normalize_sar=true:extra_opts='upscaler=custom\:upscaler_preset=ewa_lanczos':downscaler=ewa_lanczos"
+    # DN_VULKAN_FILTER="nlmeans_vulkan,libplacebo"
     DENOISE_FILTER_ARR=()
     # CPU
     DENOISE_FILTER_ARR+="nlmeans=s=${DN_STRENGTH}:p=${DN_PATCH_SIZE}:r=${DN_RESEARCH_SIZE}"

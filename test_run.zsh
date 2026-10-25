@@ -18,7 +18,7 @@ for E in $ENCODERS; do
     for D in $DEVICES; do
         for P in $PRESETS; do
             OUTPUT="$F_DIR/Processed/${F_NAME}_${P}_${D}_${E}.$F_CONTAINER"
-            COMMON_ARGS=(-i "$1" -al eng -sl none -kla eng,fra -kls eng,fra -p "$P" -ofs ntsc_film -f -v)
+            COMMON_ARGS=(-i "$1" -al eng -sl none -kla eng,fra -kls eng,fra -p "$P" -ofs ntsc_film -f)
             ./fix_video_format.zsh $COMMON_ARGS -cv $E -d $D -o $OUTPUT
             OUTPUT_ARR+=($OUTPUT)
         done
